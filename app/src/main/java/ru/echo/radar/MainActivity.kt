@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -560,7 +561,7 @@ fun EchoRadarApp(hasPermission: Boolean) {
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(24.dp),
-                            contentAlignment = Alignment(alignBiasX, alignBiasY)
+                            contentAlignment = BiasAlignment(alignBiasX, alignBiasY)
                         ) {
                             Surface(
                                 modifier = Modifier
@@ -791,8 +792,9 @@ fun EchoRadarApp(hasPermission: Boolean) {
                                         fontSize = 17.sp,
                                         fontWeight = FontWeight.Bold
                                     )
+                                                                        val encInfo = if (sig.encountersCount > 1) "${sig.encountersCount}-я встреча" else (sig.resonanceDays ?: "1-я встреча")
                                     Text(
-                                        text = "${sig.distanceLabel} • ${sig.encountersCount}-я встреча за неделю",
+                                        text = "${sig.distanceLabel} • $encInfo",
                                         color = Color(0xFF00F0FF),
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold
