@@ -37,6 +37,32 @@ data class NearbyEchoSignal(
     val isGhost: Boolean = false
 )
 
+data class EchoCapsule(
+    val id: String,
+    val creatorId: String,
+    val artist: String,
+    val title: String,
+    val moodLabel: String,
+    val personaTitle: String,
+    val zoneName: String,
+    val secretMessage: String,
+    val distanceLabel: String,
+    val angleDeg: Float,
+    val ringFactor: Float,
+    val compatibility: Int,
+    val isVenue: Boolean = false,
+    val venueName: String = "",
+    val createdAt: Long = 0L
+)
+
+data class IncomingReaction(
+    val id: Long,
+    val symbol: String,
+    val senderId: String,
+    val message: String,
+    val timestamp: Long
+)
+
 object EchoStateRepository {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -76,6 +102,20 @@ object EchoStateRepository {
     // ── Сигналы с сервера ──
     private val _nearbySignals = MutableStateFlow<List<NearbyEchoSignal>>(emptyList())
     val nearbySignals: StateFlow<List<NearbyEchoSignal>> = _nearbySignals.asStateFlow()
+
+    // ── Музыкальные капсулы (маячки-тайники) ──
+    private val _capsules = MutableStateFlow<List<EchoCapsule>>(emptyList())
+    val capsules: StateFlow<List<EchoCapsule>> = _capsules.asStateFlow()
+
+    // ── Входящие отклики (импульсы) от других слушателей/ПК ──
+    private val _incomingReaction = MutableStateFlow<IncomingReaction?>(null)
+    val incomingReaction: StateFlow<IncomingReaction?> = _incomingReaction.asStateFlow()
+
+    private var lastHandledBannerId: Long = 0L
+
+    fun dismissIncomingReaction() {
+        _incomingReaction.value = null
+    }
 
     // ── Статус подключения ──
     private val _connectionStatus = MutableStateFlow("Не подключено")
@@ -131,8 +171,7 @@ object EchoStateRepository {
         pollingJob = scope.launch {
             while (isActive) {
                 syncWithServer()
-                // Адаптивная задержка: 4с при успехе, до 10с при ошибках связи
-                val delayMs = if (consecutiveErrors > 2) 8000L else 4000L
+                val delayMs = if (consecutiveErrors > 2) 7000L else 3500L
                 delay(delayMs)
             }
         }
@@ -148,7 +187,6 @@ object EchoStateRepository {
         if (!_presenceActive.value) {
             scope.launch { deleteSignal() }
         } else {
-            // При возвращении в эфир транслируем текущий трек
             val cur = _currentTrack.value
             if (cur.artist != "Ожидание музыки...") {
                 scope.launch { sendSignalToServer(cur.artist, cur.title, cur.sourceApp) }
@@ -203,12 +241,13 @@ object EchoStateRepository {
     }
 
     private suspend fun syncWithServer() {
-        val url = buildUrl("/api/state")
+        val url = buildUrl("/api/state?deviceId=$deviceId")
         if (url.isBlank()) return
 
         val token = _echoToken.value
         val requestBuilder = Request.Builder().url(url).get()
         if (token.isNotBlank()) requestBuilder.addHeader("X-Echo-Token", token)
+        requestBuilder.addHeader("X-Device-Id", deviceId)
         val request = requestBuilder.build()
 
         try {
@@ -229,48 +268,106 @@ object EchoStateRepository {
 
             consecutiveErrors = 0
             val json = JSONObject(body)
-            val signalsArray = json.optJSONArray("signals") ?: return
 
+            // 1. Парсинг живых сигналов слушателей
+            val signalsArray = json.optJSONArray("signals")
             val signals = mutableListOf<NearbyEchoSignal>()
-            for (i in 0 until signalsArray.length()) {
-                val s = signalsArray.getJSONObject(i)
-                val id = s.optString("id", "")
-                if (id == deviceId) continue
+            if (signalsArray != null) {
+                for (i in 0 until signalsArray.length()) {
+                    val s = signalsArray.getJSONObject(i)
+                    val id = s.optString("id", "")
+                    if (id == deviceId) continue
 
-                val distM = s.optInt("distanceMeters", 100)
-                val distLabel = when {
-                    distM < 50 -> "~$distM м (совсем рядом)"
-                    distM < 120 -> "~$distM м"
-                    else -> "~$distM м (размыто)"
-                }
-                val resDays = s.optInt("resonanceDays", 0)
+                    val distM = s.optInt("distanceMeters", 100)
+                    val distLabel = when {
+                        distM < 50 -> "~$distM м (совсем рядом)"
+                        distM < 120 -> "~$distM м"
+                        else -> "~$distM м (размыто)"
+                    }
+                    val resDays = s.optInt("resonanceDays", 0)
 
-                signals.add(
-                    NearbyEchoSignal(
-                        id = id,
-                        artist = s.optString("artist", "Неизвестный"),
-                        title = s.optString("title", "Без названия"),
-                        sourceApp = s.optString("sourceName", "ЭХО"),
-                        distanceLabel = distLabel,
-                        poeticName = s.optString("personaTitle", "Архивариус забытых кассет"),
-                        aiObservation = s.optString("personaObservation", ""),
-                        compatibility = s.optInt("compatibilityPercent", 88),
-                        resonanceDays = if (resDays > 0) "Музыкальный резонанс · $resDays дн." else null,
-                        angleDeg = s.optDouble("angleDegrees", 45.0).toFloat(),
-                        ringFactor = s.optDouble("distanceRatio", 0.5).toFloat(),
-                        colorHex = s.optLong("colorHex", 0xFF38BDF8L),
-                        isGhost = s.optBoolean("isGhost", false)
+                    signals.add(
+                        NearbyEchoSignal(
+                            id = id,
+                            artist = s.optString("artist", "Неизвестный исполнитель"),
+                            title = s.optString("title", "Без названия"),
+                            sourceApp = s.optString("sourceName", "ЭХО"),
+                            distanceLabel = distLabel,
+                            poeticName = s.optString("personaTitle", "Архивариус забытых кассет"),
+                            aiObservation = s.optString("personaObservation", ""),
+                            compatibility = s.optInt("compatibilityPercent", 80),
+                            resonanceDays = if (resDays > 1) "$resDays дн." else null,
+                            angleDeg = s.optDouble("angleDegrees", 45.0).toFloat(),
+                            ringFactor = s.optDouble("distanceRatio", 0.5).toFloat(),
+                            colorHex = s.optLong("colorHex", 0xFF38BDF8L),
+                            isGhost = s.optBoolean("isGhost", false)
+                        )
                     )
-                )
+                }
             }
             _nearbySignals.value = signals
-            _connectionStatus.value = "● Онлайн (${signals.size} сигналов)"
 
+            // 2. Парсинг музыкальных тайников (капсул)
+            val capsArray = json.optJSONArray("capsules")
+            val capsList = mutableListOf<EchoCapsule>()
+            if (capsArray != null) {
+                for (i in 0 until capsArray.length()) {
+                    val c = capsArray.getJSONObject(i)
+                    val distM = c.optInt("distanceMeters", 65)
+                    val distLabel = when {
+                        distM < 50 -> "~$distM м (рядом)"
+                        distM < 120 -> "~$distM м"
+                        else -> "~$distM м (размыто)"
+                    }
+                    capsList.add(
+                        EchoCapsule(
+                            id = c.optString("id", ""),
+                            creatorId = c.optString("creatorId", ""),
+                            artist = c.optString("artist", "Неизвестный автор"),
+                            title = c.optString("title", "Без названия"),
+                            moodLabel = c.optString("moodLabel", "Теплый тайник"),
+                            personaTitle = c.optString("personaTitle", "Музыкальный тайник"),
+                            zoneName = c.optString("zoneName", "Вечерняя улица"),
+                            secretMessage = c.optString("secretMessage", "Здесь оставлена музыкальная память."),
+                            distanceLabel = distLabel,
+                            angleDeg = c.optDouble("angleDegrees", 120.0).toFloat(),
+                            ringFactor = c.optDouble("distanceRatio", 0.5).toFloat(),
+                            compatibility = c.optInt("compatibilityPercent", 90),
+                            isVenue = c.optBoolean("isVenue", false),
+                            venueName = c.optString("venueName", ""),
+                            createdAt = c.optLong("createdAt", 0L)
+                        )
+                    )
+                }
+            }
+            _capsules.value = capsList
+
+            val totalFound = signals.size + capsList.size
+            _connectionStatus.value = "● Онлайн ($totalFound объектов)"
+
+            // 3. Персональный ИИ-образ слушателя
             val myPersona = json.optString("myCuratedPersona", "")
             val myMood = json.optString("myRefinedMood", "")
             if (myPersona.isNotBlank()) {
                 val cur = _currentTrack.value
                 _currentTrack.value = cur.copy(poeticPersona = myPersona, mood = myMood.ifBlank { cur.mood })
+            }
+
+            // 4. Проверка входящих откликов (баннеров)
+            val bannerObj = json.optJSONObject("incomingBanner")
+            if (bannerObj != null) {
+                val bannerId = bannerObj.optLong("id", 0L)
+                val targetId = bannerObj.optString("targetId", "")
+                if (bannerId != 0L && bannerId > lastHandledBannerId && (targetId == deviceId || targetId.isEmpty())) {
+                    lastHandledBannerId = bannerId
+                    _incomingReaction.value = IncomingReaction(
+                        id = bannerId,
+                        symbol = bannerObj.optString("symbol", "✦"),
+                        senderId = bannerObj.optString("senderId", "Слушатель"),
+                        message = bannerObj.optString("message", "Вам отправлен импульс"),
+                        timestamp = bannerObj.optLong("time", System.currentTimeMillis())
+                    )
+                }
             }
 
         } catch (e: IOException) {
@@ -298,6 +395,7 @@ object EchoStateRepository {
             .url(url)
             .post(body.toRequestBody("application/json".toMediaType()))
         if (token.isNotBlank()) requestBuilder.addHeader("X-Echo-Token", token)
+        requestBuilder.addHeader("X-Device-Id", deviceId)
         val request = requestBuilder.build()
 
         try {
@@ -324,6 +422,54 @@ object EchoStateRepository {
         }
     }
 
+    // ── Оставить музыкальный тайник (капсулу) ──
+    fun dropCapsule(
+        artist: String,
+        title: String,
+        secretMessage: String,
+        zoneName: String = "Вечерняя улица",
+        onComplete: (Boolean) -> Unit = {}
+    ) {
+        val url = buildUrl("/api/drop_capsule")
+        if (url.isBlank()) {
+            onComplete(false)
+            return
+        }
+
+        scope.launch {
+            val body = JSONObject().apply {
+                put("creatorId", deviceId)
+                put("artist", artist)
+                put("title", title)
+                put("secretMessage", secretMessage)
+                put("zoneName", zoneName)
+                put("isVenue", false)
+            }.toString()
+
+            val token = _echoToken.value
+            val requestBuilder = Request.Builder()
+                .url(url)
+                .post(body.toRequestBody("application/json".toMediaType()))
+            if (token.isNotBlank()) requestBuilder.addHeader("X-Echo-Token", token)
+            requestBuilder.addHeader("X-Device-Id", deviceId)
+
+            try {
+                val success = withContext(Dispatchers.IO) {
+                    httpClient.newCall(requestBuilder.build()).execute().use { it.isSuccessful }
+                }
+                withContext(Dispatchers.Main) {
+                    onComplete(success)
+                }
+                syncWithServer()
+            } catch (e: Exception) {
+                Log.w("EchoRepo", "Drop capsule failed: ${e.message}")
+                withContext(Dispatchers.Main) {
+                    onComplete(false)
+                }
+            }
+        }
+    }
+
     // ── Отправка тихих реакций / настроений на сервер ──
     fun sendReaction(targetId: String, symbol: String, onResult: ((Boolean) -> Unit)? = null) {
         scope.launch {
@@ -343,6 +489,7 @@ object EchoStateRepository {
                 .url(url)
                 .post(body.toRequestBody("application/json".toMediaType()))
             if (token.isNotBlank()) requestBuilder.addHeader("X-Echo-Token", token)
+            requestBuilder.addHeader("X-Device-Id", deviceId)
             val request = requestBuilder.build()
 
             try {
@@ -367,6 +514,7 @@ object EchoStateRepository {
             .url(url)
             .post(body.toRequestBody("application/json".toMediaType()))
         if (token.isNotBlank()) requestBuilder.addHeader("X-Echo-Token", token)
+        requestBuilder.addHeader("X-Device-Id", deviceId)
         val request = requestBuilder.build()
 
         try {
