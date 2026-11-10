@@ -135,7 +135,8 @@ fun EchoMainScreen() {
     val capsules by EchoStateRepository.capsules.collectAsState()
     val isPresenceActive by EchoStateRepository.presenceActive.collectAsState()
     val serverHost by EchoStateRepository.serverHost.collectAsState()
-    val isConnected by EchoStateRepository.connectionStatus.collectAsState()
+    val connectionStatusStr by EchoStateRepository.connectionStatus.collectAsState()
+    val isConnected = !connectionStatusStr.contains("Не подключено") && !connectionStatusStr.contains("Сбой")
 
     // Dialog states
     var showMyTrackDialog by remember { mutableStateOf(false) }
@@ -731,7 +732,7 @@ fun EchoMainScreen() {
                         Text("Вещание присутствия", color = Color.White, fontSize = 13.sp)
                         Switch(
                             checked = isPresenceActive,
-                            onCheckedChange = { EchoStateRepository.togglePresence(it) },
+                            onCheckedChange = { EchoStateRepository.togglePresence() },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color(0xFF00F0FF),
                                 checkedTrackColor = Color(0xFF00F0FF).copy(alpha = 0.25f)
@@ -833,7 +834,7 @@ fun EchoMainScreen() {
                             EchoStateRepository.updateDetectedMusic(
                                 artist = artist.ifBlank { "Неизвестный автор" },
                                 title = title,
-                                source = "Ручной ввод"
+                                packageName = "manual"
                             )
                         }
                         showManualTrackDialog = false
