@@ -220,6 +220,15 @@ fun VinylCityMainScreen() {
         }
     }
 
+    // Auto-dismiss and haptic vibration when an incoming reaction arrives
+    LaunchedEffect(incomingReaction) {
+        if (incomingReaction != null) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            delay(5500)
+            EchoStateRepository.dismissIncomingReaction()
+        }
+    }
+
     // Continuous infinite transitions for vinyl rotation and neon pulsing
     val infiniteTransition = rememberInfiniteTransition(label = "VinylAnimations")
     val platterRotationAngle by infiniteTransition.animateFloat(
