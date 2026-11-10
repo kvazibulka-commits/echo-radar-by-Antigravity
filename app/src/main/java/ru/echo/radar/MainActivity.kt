@@ -34,21 +34,26 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
 class MainActivity : ComponentActivity() {
+    private val hasPermissionState = mutableStateOf(false)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         EchoStateRepository.init(this)
+        hasPermissionState.value = isNotificationListenerEnabled(this)
         setContent {
-            EchoRadarApp()
+            EchoRadarApp(hasPermission = hasPermissionState.value)
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        hasPermissionState.value = isNotificationListenerEnabled(this)
     }
 }
 
@@ -59,23 +64,12 @@ fun isNotificationListenerEnabled(context: Context): Boolean {
 }
 
 @Composable
-fun EchoRadarApp() {
+fun EchoRadarApp(hasPermission: Boolean) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
-    val lifecycleOwner = LocalLifecycleOwner.current
 
-    var hasNotificationPermission by remember { mutableStateOf(isNotificationListenerEnabled(context)) }
+    var hasNotificationPermission by remember(hasPermission) { mutableStateOf(hasPermission) }
     var showPermissionGuideDialog by remember { mutableStateOf(false) }
-
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                hasNotificationPermission = isNotificationListenerEnabled(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
 
     val currentTrack by EchoStateRepository.currentTrack.collectAsState()
     val presenceActive by EchoStateRepository.presenceActive.collectAsState()
@@ -466,7 +460,6 @@ fun EchoRadarApp() {
                                 val minDim = minOf(size.width, size.height).toFloat()
                                 val maxR = minDim * 0.44f
 
-                                // Поиск ближайшего слушателя
                                 var closestSignal: NearbyEchoSignal? = null
                                 var minSignalDist = Float.MAX_VALUE
                                 for (sig in nearbySignalsFlow) {
@@ -483,7 +476,6 @@ fun EchoRadarApp() {
                                     }
                                 }
 
-                                // Поиск ближайшего тайника (капсулы)
                                 var closestCap: EchoCapsule? = null
                                 var minCapDist = Float.MAX_VALUE
                                 for (cap in capsulesFlow) {
