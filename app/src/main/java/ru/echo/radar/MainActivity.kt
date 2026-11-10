@@ -1,5 +1,6 @@
 package ru.echo.radar
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.provider.Settings
@@ -33,6 +34,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.delay
 import kotlin.math.cos
 import kotlin.math.sin
@@ -48,10 +52,30 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+fun isNotificationListenerEnabled(context: Context): Boolean {
+    val packageName = context.packageName
+    val flat = Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners")
+    return flat != null && flat.contains(packageName)
+}
+
 @Composable
 fun EchoRadarApp() {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    var hasNotificationPermission by remember { mutableStateOf(isNotificationListenerEnabled(context)) }
+    var showPermissionGuideDialog by remember { mutableStateOf(false) }
+
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                hasNotificationPermission = isNotificationListenerEnabled(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val currentTrack by EchoStateRepository.currentTrack.collectAsState()
     val presenceActive by EchoStateRepository.presenceActive.collectAsState()
@@ -317,22 +341,61 @@ fun EchoRadarApp() {
                 }
             }
 
+            // Подсказка, если доступ к чтению музыки еще не выдан
+            if (!hasNotificationPermission) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { showPermissionGuideDialog = true },
+                    color = Color(0xFF1E1B4B),
+                    border = BorderStroke(1.dp, Color(0xFF6366F1))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("🎧", fontSize = 16.sp)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "ПЕРЕХВАТ МУЗЫКИ НЕ ВКЛЮЧЕН",
+                                color = Color(0xFF818CF8),
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp
+                            )
+                            Text(
+                                text = "Нажмите здесь, чтобы узнать как включить чтение треков",
+                                color = Color(0xFFCBD5E1),
+                                fontSize = 11.sp
+                            )
+                        }
+                        Text("Инструкция →", color = Color(0xFF38BDF8), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
             // Кнопки управления источником и тайником
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 OutlinedButton(
-                    onClick = {
-                        context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
-                    },
+                    onClick = { showPermissionGuideDialog = true },
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFCBD5E1)),
-                    border = BorderStroke(1.dp, Color(0xFF334155)),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = if (hasNotificationPermission) Color(0xFF22C55E) else Color(0xFFFBBF24)
+                    ),
+                    border = BorderStroke(1.dp, if (hasNotificationPermission) Color(0xFF15803D) else Color(0xFFD97706)),
                     contentPadding = PaddingValues(vertical = 8.dp)
                 ) {
-                    Text("🎧 Плееры", fontSize = 11.sp)
+                    Text(
+                        text = if (hasNotificationPermission) "🎧 Плееры ✓" else "🎧 Плееры ⚠️",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
 
                 OutlinedButton(
@@ -497,7 +560,7 @@ fun EchoRadarApp() {
                         )
                     }
 
-                    // 1. Отрисовка музыкальных тайников (капсул) — золотистые ромбы
+                    // 1. Отрисовка музыкальных тайников (капсул) — золотистые маркеры
                     capsulesFlow.forEach { cap ->
                         val rad = Math.toRadians(cap.angleDeg.toDouble())
                         val r = maxR * cap.ringFactor.coerceIn(0.2f, 0.95f)
@@ -506,14 +569,12 @@ fun EchoRadarApp() {
                         val cOffset = Offset(cx, cy)
                         val isSelected = cap.id == selectedCapsule?.id
 
-                        // Пульсирующий ореол
                         drawCircle(
                             color = Color(0xFFF59E0B).copy(alpha = if (isSelected) 0.35f else 0.15f),
                             radius = if (isSelected) 15.dp.toPx() * beaconPulse else 11.dp.toPx(),
                             center = cOffset
                         )
 
-                        // Центральный маркер тайника
                         drawCircle(
                             color = Color(0xFFFBBF24),
                             radius = if (isSelected) 7.dp.toPx() else 5.dp.toPx(),
@@ -865,7 +926,6 @@ fun EchoRadarApp() {
         }
 
         if (activeTab == 0) {
-            // Список слушателей
             if (nearbySignalsFlow.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     nearbySignalsFlow.forEach { sig ->
@@ -944,7 +1004,6 @@ fun EchoRadarApp() {
                 )
             }
         } else {
-            // Список капсул / тайников
             if (capsulesFlow.isNotEmpty()) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     capsulesFlow.forEach { cap ->
@@ -1001,6 +1060,65 @@ fun EchoRadarApp() {
                 )
             }
         }
+    }
+
+    // ── ДИАЛОГ-ИНСТРУКЦИЯ ПО ВКЛЮЧЕНИЮ ЧТЕНИЯ МУЗЫКИ ──
+    if (showPermissionGuideDialog) {
+        AlertDialog(
+            onDismissRequest = { showPermissionGuideDialog = false },
+            containerColor = Color(0xFF0F172A),
+            shape = RoundedCornerShape(22.dp),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("🎧", fontSize = 22.sp)
+                    Text("Как включить чтение музыки", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Чтобы ЭХО видело треки из Яндекс Музыки, Spotify и VK, системе Android нужно разрешить доступ к уведомлениям:",
+                        color = Color(0xFFCBD5E1),
+                        fontSize = 12.sp
+                    )
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF1E293B),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("1. Нажмите «Открыть настройки Android» ниже.", color = Color.White, fontSize = 12.sp)
+                            Text("2. В списке «ЗАПРЕЩЕНО» нажмите на «ЭХО».", color = Color(0xFF38BDF8), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("3. Включите тумблер «Разрешить доступ».", color = Color.White, fontSize = 12.sp)
+                            Text("4. (На Xiaomi) дождитесь 10 сек таймера, поставьте галочку и нажмите ОК.", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                        }
+                    }
+
+                    Text(
+                        text = "💡 Если на Xiaomi тумблер серый («Ограниченная настройка»): на главном экране зажмите иконку ЭХО ➔ «О приложении» ➔ 3 точки вверху (⋮) ➔ «Разрешить ограниченные настройки».",
+                        color = Color(0xFFFBBF24),
+                        fontSize = 11.sp
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showPermissionGuideDialog = false
+                        context.startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5))
+                ) {
+                    Text("Открыть настройки Android", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showPermissionGuideDialog = false }) {
+                    Text("Понятно", color = Color(0xFF94A3B8))
+                }
+            }
+        )
     }
 
     // ── ДИАЛОГ ОСТАВИТЬ МУЗЫКАЛЬНЫЙ ТАЙНИК (КАПСУЛУ) ──
