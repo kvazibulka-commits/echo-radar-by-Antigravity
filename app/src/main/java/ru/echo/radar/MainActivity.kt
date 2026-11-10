@@ -12,8 +12,6 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -22,16 +20,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
@@ -41,6 +41,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
@@ -56,9 +57,9 @@ class MainActivity : ComponentActivity() {
             EchoRadarTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
-                    color = Color(0xFF0B0E14)
+                    color = Color(0xFF080B10)
                 ) {
-                    EchoMainScreen()
+                    VinylCityMainScreen()
                 }
             }
         }
@@ -69,177 +70,233 @@ class MainActivity : ComponentActivity() {
 fun EchoRadarTheme(content: @Composable () -> Unit) {
     MaterialTheme(
         colorScheme = darkColorScheme(
-            background = Color(0xFF0B0E14),
-            surface = Color(0xFF121722),
+            background = Color(0xFF080B10),
+            surface = Color(0xFF0F1420),
             primary = Color(0xFF00F0FF),
             secondary = Color(0xFFA855F7),
-            tertiary = Color(0xFFF59E0B)
+            tertiary = Color(0xFFFFB800)
         ),
         content = content
     )
 }
 
 // -------------------------------------------------------------
-// UI DATA WRAPPER FOR CAROUSEL & RADAR SYNCHRONIZATION
+// UNIFIED VINYL TRACK MODEL (COMBINING SIGNALS & CAPSULES)
 // -------------------------------------------------------------
-sealed class RadarItem {
-    abstract val id: String
-    abstract val title: String
-    abstract val subtitle: String
-    abstract val angleDeg: Float
-    abstract val ringFactor: Float
-    abstract val colorHex: Long
-    abstract val distanceMeters: Int
+data class VinylTrack(
+    val id: String,
+    val title: String,
+    val artist: String,
+    val sourceApp: String,
+    val distanceLabel: String,
+    val poeticPersona: String,
+    val observation: String,
+    val story: String,
+    val compatibility: Int,
+    val angleDeg: Float,
+    val ringFactor: Float,
+    val colorHex: Long,
+    val isCapsule: Boolean = false,
+    val isGhost: Boolean = false,
+    val isSelf: Boolean = false
+)
 
-    data class SignalNode(val signal: NearbyEchoSignal) : RadarItem() {
-        override val id: String get() = signal.id
-        override val title: String get() = signal.title
-        override val subtitle: String get() = signal.artist
-        override val angleDeg: Float get() = signal.angleDeg
-        override val ringFactor: Float get() = signal.ringFactor
-        override val colorHex: Long get() = signal.colorHex
-        override val distanceMeters: Int get() = signal.compatibility
-    }
+fun PlayingTrack.toVinylTrack(): VinylTrack = VinylTrack(
+    id = "self_user_vinyl",
+    title = title,
+    artist = artist,
+    sourceApp = sourceApp,
+    distanceLabel = "Вы • В центре эфира",
+    poeticPersona = poeticPersona,
+    observation = "Ваша текущая музыкальная аура звучит в ночном городе.",
+    story = "Ваш личный звуковой маяк транслирует эту мелодию в эфир.",
+    compatibility = 100,
+    angleDeg = 0f,
+    ringFactor = 0f,
+    colorHex = 0xFF00F0FFL,
+    isSelf = true
+)
 
-    data class CapsuleNode(val capsule: EchoCapsule) : RadarItem() {
-        override val id: String get() = capsule.id
-        override val title: String get() = capsule.title
-        override val subtitle: String get() = capsule.artist
-        override val angleDeg: Float get() = capsule.angleDeg
-        override val ringFactor: Float get() = capsule.ringFactor
-        override val colorHex: Long get() = 0xFFF59E0BL
-        override val distanceMeters: Int get() = 40
-    }
-}
+fun NearbyEchoSignal.toVinylTrack(): VinylTrack = VinylTrack(
+    id = id,
+    title = title,
+    artist = artist,
+    sourceApp = sourceApp,
+    distanceLabel = distanceLabel,
+    poeticPersona = poeticName,
+    observation = aiObservation.ifBlank { "Слушает музыку в вечерней тишине." },
+    story = resonanceStory.ifBlank { "Тёплый вечерний резонанс в ночном квартале." },
+    compatibility = compatibility,
+    angleDeg = angleDeg,
+    ringFactor = ringFactor,
+    colorHex = colorHex,
+    isGhost = isGhost
+)
 
-fun formatPoeticDistance(ringFactor: Float): String {
-    return when {
-        ringFactor < 0.38f -> "В одном дворе • ~25 м"
-        ringFactor < 0.70f -> "Через улицу • ~70 м"
-        else -> "В квартале • ~140 м"
-    }
-}
+fun EchoCapsule.toVinylTrack(): VinylTrack = VinylTrack(
+    id = id,
+    title = title,
+    artist = artist,
+    sourceApp = if (isVenue) venueName else "Тайник",
+    distanceLabel = distanceLabel,
+    poeticPersona = personaTitle,
+    observation = secretMessage,
+    story = "Музыкальная капсула, оставленная в зоне: $zoneName",
+    compatibility = compatibility,
+    angleDeg = angleDeg,
+    ringFactor = ringFactor,
+    colorHex = 0xFFFFB800L,
+    isCapsule = true
+)
 
 // -------------------------------------------------------------
-// MAIN SCREEN: PURE NOCTURNE ATMOSPHERE
+// MAIN SCREEN: VINYL CITY MAP + TACTILE TURNTABLE DECK
 // -------------------------------------------------------------
-@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EchoMainScreen() {
+fun VinylCityMainScreen() {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val coroutineScope = rememberCoroutineScope()
 
-    val currentTrack by EchoStateRepository.currentTrack.collectAsState()
+    val currentPlayingTrack by EchoStateRepository.currentTrack.collectAsState()
     val nearbySignals by EchoStateRepository.nearbySignals.collectAsState()
     val capsules by EchoStateRepository.capsules.collectAsState()
     val isPresenceActive by EchoStateRepository.presenceActive.collectAsState()
-    val serverHost by EchoStateRepository.serverHost.collectAsState()
     val connectionStatusStr by EchoStateRepository.connectionStatus.collectAsState()
+    val incomingReaction by EchoStateRepository.incomingReaction.collectAsState()
+    val serverHost by EchoStateRepository.serverHost.collectAsState()
+
     val isConnected = !connectionStatusStr.contains("Не подключено") && !connectionStatusStr.contains("Сбой")
 
-    // Dialog states
-    var showMyTrackDialog by remember { mutableStateOf(false) }
-    var showServerSettingsDialog by remember { mutableStateOf(false) }
-    var showManualTrackDialog by remember { mutableStateOf(false) }
-    var showDropCapsuleDialog by remember { mutableStateOf(false) }
-    var selectedItemForSheet by remember { mutableStateOf<RadarItem?>(null) }
-
-    // Combine signals & capsules into a unified item list for the bottom dock
-    val radarItems = remember(nearbySignals, capsules) {
-        val list = mutableListOf<RadarItem>()
-        nearbySignals.forEach { list.add(RadarItem.SignalNode(it)) }
-        capsules.forEach { list.add(RadarItem.CapsuleNode(it)) }
+    // All available vinyl records in the vicinity
+    val allVinyls = remember(currentPlayingTrack, nearbySignals, capsules) {
+        val list = mutableListOf<VinylTrack>()
+        nearbySignals.forEach { list.add(it.toVinylTrack()) }
+        capsules.forEach { list.add(it.toVinylTrack()) }
         list
     }
 
-    val pagerState = rememberPagerState(
-        initialPage = 0,
-        pageCount = { if (radarItems.isEmpty()) 1 else radarItems.size }
-    )
+    // Currently loaded vinyl on the turntable deck
+    var selectedVinyl by remember { mutableStateOf<VinylTrack?>(null) }
 
-    // Current focused item on the radar (drives the neon laser beam)
-    val focusedItem = remember(radarItems, pagerState.currentPage) {
-        if (radarItems.isNotEmpty() && pagerState.currentPage in radarItems.indices) {
-            radarItems[pagerState.currentPage]
-        } else null
+    // When allVinyls or currentPlayingTrack changes, ensure a selected track
+    LaunchedEffect(allVinyls, currentPlayingTrack) {
+        if (selectedVinyl == null) {
+            selectedVinyl = if (allVinyls.isNotEmpty()) allVinyls.first() else currentPlayingTrack.toVinylTrack()
+        } else if (selectedVinyl?.isSelf == true) {
+            selectedVinyl = currentPlayingTrack.toVinylTrack()
+        }
     }
 
-    // Continuous smooth sweep angle (0 -> 360 deg)
-    val infiniteTransition = rememberInfiniteTransition(label = "RadarTransition")
-    val sweepAngle by infiniteTransition.animateFloat(
+    // Turntable play & tonearm state
+    var isPlatterSpinning by remember { mutableStateOf(true) }
+
+    // Active Album Artwork URL loaded via iTunes Search API
+    var activeCoverUrl by remember { mutableStateOf<String?>(null) }
+
+    val activeTrack = selectedVinyl ?: currentPlayingTrack.toVinylTrack()
+
+    LaunchedEffect(activeTrack.artist, activeTrack.title) {
+        activeCoverUrl = null
+        if (!activeTrack.artist.startsWith("Ожидание") && activeTrack.artist.isNotBlank()) {
+            val url = AlbumArtResolver.getCoverUrl(activeTrack.artist, activeTrack.title)
+            activeCoverUrl = url
+        }
+    }
+
+    // Modal dialog states
+    var showServerSettingsDialog by remember { mutableStateOf(false) }
+    var showManualTrackDialog by remember { mutableStateOf(false) }
+    var showDropCapsuleDialog by remember { mutableStateOf(false) }
+    var showCuratorObservationDialog by remember { mutableStateOf(false) }
+
+    // Feedback toast for reactions sent
+    var reactionSentFeedback by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(reactionSentFeedback) {
+        if (reactionSentFeedback != null) {
+            delay(2400)
+            reactionSentFeedback = null
+        }
+    }
+
+    // Continuous infinite transitions for vinyl rotation and neon pulsing
+    val infiniteTransition = rememberInfiniteTransition(label = "VinylAnimations")
+    val platterRotationAngle by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 6500, easing = LinearEasing),
+            animation = tween(durationMillis = 2800, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "SweepAngle"
+        label = "PlatterRotation"
     )
 
-    // Breathing pulse for beacons
-    val beaconPulse by infiniteTransition.animateFloat(
-        initialValue = 0.85f,
-        targetValue = 1.25f,
+    val neonPulse by infiniteTransition.animateFloat(
+        initialValue = 0.82f,
+        targetValue = 1.18f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2400, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 2200, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
-        label = "BeaconPulse"
+        label = "NeonPulse"
     )
 
-    // Photon travel along the laser beam
-    val photonProgress by infiniteTransition.animateFloat(
+    val laserPhotonProgress by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1400, easing = LinearEasing),
+            animation = tween(durationMillis = 1500, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
-        label = "PhotonProgress"
+        label = "LaserPhoton"
     )
 
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0B0E14))
+            .background(Color(0xFF080B10))
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // 1. TOP BAR (56dp) — Minimalist & Clean, Zero Clutter
+            // =========================================================
+            // 1. TOP STATUS & BRAND BAR (52dp)
+            // =========================================================
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp)
+                    .height(52.dp)
                     .padding(horizontal = 20.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Typographic sparse logo
-                Text(
-                    text = "Э  Х  О",
-                    color = Color.White,
-                    fontSize = 19.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 6.sp
-                )
+                // Typographic Brand Logo
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "Э  Х  О",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 6.sp
+                    )
+                }
 
-                // Interactive Live Capsule
+                // Presence / Status Pill
                 Surface(
                     modifier = Modifier
                         .clip(RoundedCornerShape(20.dp))
                         .combinedClickable(
                             onClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                showMyTrackDialog = true
+                                showManualTrackDialog = true
                             },
                             onLongClick = {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 showServerSettingsDialog = true
                             }
                         ),
-                    color = Color(0xFF121722).copy(alpha = 0.9f),
-                    border = BorderStroke(0.8.dp, if (isConnected) Color(0xFF1E2638) else Color(0xFFE11D48))
+                    color = Color(0xFF111622).copy(alpha = 0.95f),
+                    border = BorderStroke(0.8.dp, if (isConnected) Color(0xFF1E283C) else Color(0xFFE11D48))
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
@@ -250,10 +307,10 @@ fun EchoMainScreen() {
                             modifier = Modifier
                                 .size(7.dp)
                                 .clip(CircleShape)
-                                .background(if (isConnected) Color(0xFF00F0FF) else Color(0xFF64748B))
+                                .background(if (isConnected) Color(0xFF00F0FF) else Color(0xFFE11D48))
                         )
                         Text(
-                            text = if (isConnected) "${radarItems.size} в эфире" else "Оффлайн",
+                            text = if (isConnected) "${allVinyls.size} в квартале" else "Оффлайн",
                             color = if (isConnected) Color(0xFF00F0FF) else Color(0xFF94A3B8),
                             fontSize = 11.5.sp,
                             fontFamily = FontFamily.Monospace,
@@ -261,617 +318,397 @@ fun EchoMainScreen() {
                         )
                     }
                 }
-            }
 
-            // 2. CENTRAL SONAR SCENE (Taking remaining height up to Thumb Zone)
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Canvas(
+                // Stealth / On-Air Toggle Button
+                Surface(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .pointerInput(radarItems) {
-                            detectTapGestures { tapOffset ->
-                                val center = Offset(size.width / 2f, size.height / 2f - 15.dp.toPx())
-                                val maxR = minOf(size.width, size.height) * 0.44f
-
-                                // Check tap on center dot (user's beacon)
-                                val distFromCenter = sqrt(
-                                    (tapOffset.x - center.x) * (tapOffset.x - center.x) +
-                                    (tapOffset.y - center.y) * (tapOffset.y - center.y)
-                                )
-                                if (distFromCenter < 35.dp.toPx()) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    showMyTrackDialog = true
-                                    return@detectTapGestures
-                                }
-
-                                // Check tap on beacons
-                                var clickedIndex: Int? = null
-                                var minTapDist = 45.dp.toPx()
-
-                                radarItems.forEachIndexed { idx, item ->
-                                    // Add privacy angular jitter (±15 deg based on ID hash)
-                                    val jitter = (item.id.hashCode() % 31 - 15) * 0.4f
-                                    val rad = Math.toRadians((item.angleDeg + jitter).toDouble())
-                                    val r = maxR * item.ringFactor.coerceIn(0.25f, 0.92f)
-                                    val bx = center.x + (r.toDouble() * cos(rad)).toFloat()
-                                    val by = center.y + (r.toDouble() * sin(rad)).toFloat()
-                                    val d = sqrt((tapOffset.x - bx) * (tapOffset.x - bx) + (tapOffset.y - by) * (tapOffset.y - by))
-                                    if (d < minTapDist) {
-                                        minTapDist = d
-                                        clickedIndex = idx
-                                    }
-                                }
-
-                                if (clickedIndex != null) {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    coroutineScope.launch {
-                                        pagerState.animateScrollToPage(clickedIndex!!)
-                                    }
-                                    selectedItemForSheet = radarItems[clickedIndex!!]
-                                }
-                            }
-                        }
+                        .clip(RoundedCornerShape(18.dp))
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            EchoStateRepository.togglePresence()
+                        },
+                    color = if (isPresenceActive) Color(0xFF00F0FF).copy(alpha = 0.12f) else Color(0xFF1E2430),
+                    border = BorderStroke(
+                        0.8.dp,
+                        if (isPresenceActive) Color(0xFF00F0FF).copy(alpha = 0.5f) else Color(0xFF334155)
+                    )
                 ) {
-                    val center = Offset(size.width / 2f, size.height / 2f - 15.dp.toPx())
-                    val maxR = minOf(size.width, size.height) * 0.44f
-
-                    // A. Three concentric atmospheric range rings
-                    listOf(0.35f, 0.65f, 0.95f).forEach { ratio ->
-                        drawCircle(
-                            color = Color(0xFF1E2638).copy(alpha = 0.55f),
-                            radius = maxR * ratio,
-                            center = center,
-                            style = Stroke(width = 0.8.dp.toPx())
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Text(
+                            text = if (isPresenceActive) "В эфире" else "Невидимка",
+                            color = if (isPresenceActive) Color(0xFF00F0FF) else Color(0xFF94A3B8),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
                         )
                     }
-
-                    // Crosshair axis ticks
-                    drawLine(
-                        color = Color(0xFF1E2638).copy(alpha = 0.35f),
-                        start = Offset(center.x - maxR, center.y),
-                        end = Offset(center.x + maxR, center.y),
-                        strokeWidth = 0.6.dp.toPx()
-                    )
-                    drawLine(
-                        color = Color(0xFF1E2638).copy(alpha = 0.35f),
-                        start = Offset(center.x, center.y - maxR),
-                        end = Offset(center.x, center.y + maxR),
-                        strokeWidth = 0.6.dp.toPx()
-                    )
-
-                    // B. Soft Conical Sweep Gradient Beam (35° trail)
-                    val trailAngle = 35f
-                    val beamColor = if (isConnected) Color(0xFF00F0FF) else Color(0xFF64748B)
-
-                    // Draw conical arc trail
-                    for (step in 0..14) {
-                        val frac = step / 14f
-                        val angleStep = sweepAngle - (trailAngle * (1f - frac))
-                        val radStep = Math.toRadians(angleStep.toDouble())
-                        val xStep = center.x + (maxR * cos(radStep)).toFloat()
-                        val yStep = center.y + (maxR * sin(radStep)).toFloat()
-                        drawLine(
-                            color = beamColor.copy(alpha = 0.015f + 0.16f * frac),
-                            start = center,
-                            end = Offset(xStep, yStep),
-                            strokeWidth = (maxR * 0.05f).coerceAtLeast(2f)
-                        )
-                    }
-
-                    // Bright leading ray edge
-                    val leadingRad = Math.toRadians(sweepAngle.toDouble())
-                    val leadEndX = center.x + (maxR * cos(leadingRad)).toFloat()
-                    val leadEndY = center.y + (maxR * sin(leadingRad)).toFloat()
-                    drawLine(
-                        color = beamColor.copy(alpha = 0.75f),
-                        start = center,
-                        end = Offset(leadEndX, leadEndY),
-                        strokeWidth = 1.3.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
-
-                    // C. Selected Beacon Laser Resonance Beam + Photon Particle
-                    if (focusedItem != null) {
-                        val jitter = (focusedItem.id.hashCode() % 31 - 15) * 0.4f
-                        val targetRad = Math.toRadians((focusedItem.angleDeg + jitter).toDouble())
-                        val targetR = maxR * focusedItem.ringFactor.coerceIn(0.25f, 0.92f)
-                        val targetX = center.x + (targetR.toDouble() * cos(targetRad)).toFloat()
-                        val targetY = center.y + (targetR.toDouble() * sin(targetRad)).toFloat()
-
-                        // Cyan glow background line
-                        drawLine(
-                            color = Color(0xFF00F0FF).copy(alpha = 0.25f),
-                            start = center,
-                            end = Offset(targetX, targetY),
-                            strokeWidth = 3.5.dp.toPx(),
-                            cap = StrokeCap.Round
-                        )
-                        // Core bright laser
-                        drawLine(
-                            color = Color(0xFF00F0FF).copy(alpha = 0.85f),
-                            start = center,
-                            end = Offset(targetX, targetY),
-                            strokeWidth = 1.2.dp.toPx(),
-                            cap = StrokeCap.Round
-                        )
-
-                        // Traveling photon pulse
-                        val photonX = center.x + (targetX - center.x) * photonProgress
-                        val photonY = center.y + (targetY - center.y) * photonProgress
-                        drawCircle(
-                            color = Color.White,
-                            radius = 2.8.dp.toPx(),
-                            center = Offset(photonX, photonY)
-                        )
-                        drawCircle(
-                            color = Color(0xFF00F0FF).copy(alpha = 0.6f),
-                            radius = 6.dp.toPx(),
-                            center = Offset(photonX, photonY)
-                        )
-                    }
-
-                    // D. Render All Beacons (Clean glowing dots, ZERO text collision on canvas)
-                    radarItems.forEach { item ->
-                        val jitter = (item.id.hashCode() % 31 - 15) * 0.4f
-                        val rad = Math.toRadians((item.angleDeg + jitter).toDouble())
-                        val r = maxR * item.ringFactor.coerceIn(0.25f, 0.92f)
-                        val bx = center.x + (r.toDouble() * cos(rad)).toFloat()
-                        val by = center.y + (r.toDouble() * sin(rad)).toFloat()
-
-                        val isFocused = (item.id == focusedItem?.id)
-                        val beaconColor = Color(item.colorHex)
-
-                        // Outer breathing aura
-                        drawCircle(
-                            color = beaconColor.copy(alpha = if (isFocused) 0.35f else 0.18f),
-                            radius = (if (isFocused) 15.dp.toPx() else 9.dp.toPx()) * beaconPulse,
-                            center = Offset(bx, by)
-                        )
-                        // Middle aura
-                        drawCircle(
-                            color = beaconColor.copy(alpha = 0.65f),
-                            radius = if (isFocused) 6.5.dp.toPx() else 4.5.dp.toPx(),
-                            center = Offset(bx, by)
-                        )
-                        // Bright core
-                        drawCircle(
-                            color = Color.White,
-                            radius = if (isFocused) 3.dp.toPx() else 2.dp.toPx(),
-                            center = Offset(bx, by)
-                        )
-                    }
-
-                    // E. Central Node (User's presence)
-                    drawCircle(
-                        color = Color(0xFF00F0FF).copy(alpha = 0.22f),
-                        radius = 16.dp.toPx() * beaconPulse,
-                        center = center
-                    )
-                    drawCircle(
-                        color = Color(0xFF00F0FF),
-                        radius = 6.dp.toPx(),
-                        center = center
-                    )
-                    drawCircle(
-                        color = Color.White,
-                        radius = 2.5.dp.toPx(),
-                        center = center
-                    )
                 }
             }
 
-            // 3. BOTTOM THUMB ZONE (20% height, max air & ergonomics)
+            // =========================================================
+            // 2. VINYL CITY MAP (56% Viewport Height)
+            // =========================================================
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 20.dp, top = 4.dp),
+                    .weight(1.25f)
+                    .fillMaxWidth(),
                 contentAlignment = Alignment.Center
+            ) {
+                VinylCityMapCanvas(
+                    allVinyls = allVinyls,
+                    selectedVinyl = selectedVinyl,
+                    neonPulse = neonPulse,
+                    laserPhotonProgress = laserPhotonProgress,
+                    onVinylSelected = { vinyl ->
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        selectedVinyl = vinyl
+                        isPlatterSpinning = true
+                    },
+                    onCenterUserClicked = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        selectedVinyl = currentPlayingTrack.toVinylTrack()
+                        isPlatterSpinning = true
+                    }
+                )
+
+                // Quick Floating Map Action: Drop Capsule
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(end = 16.dp, bottom = 12.dp)
+                        .clip(CircleShape)
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showDropCapsuleDialog = true
+                        },
+                    color = Color(0xFF111622).copy(alpha = 0.92f),
+                    border = BorderStroke(1.dp, Color(0xFFFFB800).copy(alpha = 0.7f)),
+                    shadowElevation = 6.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(text = "⏳", fontSize = 13.sp)
+                        Text(
+                            text = "Оставить тайник",
+                            color = Color(0xFFFFB800),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+            }
+
+            // =========================================================
+            // 3. TACTILE TURNTABLE DECK (44% Viewport Height in Thumb Zone)
+            // =========================================================
+            Surface(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                color = Color(0xFF0D121B),
+                border = BorderStroke(1.dp, Color(0xFF1E283C))
+            ) {
+                TurntableDeckView(
+                    activeTrack = activeTrack,
+                    coverUrl = activeCoverUrl,
+                    isSpinning = isPlatterSpinning,
+                    rotationAngle = if (isPlatterSpinning) platterRotationAngle else 0f,
+                    onToggleSpin = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        isPlatterSpinning = !isPlatterSpinning
+                    },
+                    onOpenInMusicApp = {
+                        openMusicApp(context, activeTrack.artist, activeTrack.title, activeTrack.sourceApp)
+                    },
+                    onSendReaction = { glyph ->
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        val targetId = if (activeTrack.isSelf) "broadcast" else activeTrack.id
+                        EchoStateRepository.sendReaction(targetId, glyph) { ok ->
+                            reactionSentFeedback = if (ok) "Импульс $glyph отправлен" else "Ошибка отправки"
+                        }
+                    },
+                    onOpenCuratorStory = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        showCuratorObservationDialog = true
+                    },
+                    onSelectSelf = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        selectedVinyl = currentPlayingTrack.toVinylTrack()
+                        isPlatterSpinning = true
+                    }
+                )
+            }
+        }
+
+        // =========================================================
+        // 4. FLOATING REACTION FEEDBACK NOTIFICATION
+        // =========================================================
+        AnimatedVisibility(
+            visible = reactionSentFeedback != null,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = 58.dp),
+            enter = fadeIn() + slideInVertically(initialOffsetY = { -20 }),
+            exit = fadeOut() + slideOutVertically(targetOffsetY = { -20 })
+        ) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFF00F0FF).copy(alpha = 0.95f),
+                shadowElevation = 8.dp
+            ) {
+                Text(
+                    text = reactionSentFeedback ?: "",
+                    color = Color.Black,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+            }
+        }
+
+        // =========================================================
+        // 5. INCOMING ATMOSPHERIC REACTION BANNER
+        // =========================================================
+        incomingReaction?.let { inc ->
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 56.dp, start = 16.dp, end = 16.dp)
+                    .clip(RoundedCornerShape(18.dp))
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        EchoStateRepository.dismissIncomingReaction()
+                    },
+                color = Color(0xFF141B29),
+                border = BorderStroke(1.2.dp, Color(0xFF00F0FF)),
+                shadowElevation = 12.dp
             ) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp),
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    // A. Horizontal Pager with Card Peek (82% width)
-                    Box(modifier = Modifier.weight(1f)) {
-                        if (radarItems.isEmpty()) {
-                            // Empty State Card
-                            Surface(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(72.dp)
-                                    .clip(RoundedCornerShape(16.dp)),
-                                color = Color(0xFF121722).copy(alpha = 0.85f),
-                                border = BorderStroke(0.8.dp, Color(0xFF1E2638))
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(horizontal = 16.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Text(
-                                        text = "🌑",
-                                        fontSize = 20.sp
-                                    )
-                                    Column {
-                                        Text(
-                                            text = "Ночной эфир тих",
-                                            color = Color.White,
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = "Включите музыку на телефоне или ПК",
-                                            color = Color(0xFF94A3B8),
-                                            fontSize = 11.5.sp
-                                        )
-                                    }
-                                }
-                            }
-                        } else {
-                            HorizontalPager(
-                                state = pagerState,
-                                contentPadding = PaddingValues(horizontal = 12.dp),
-                                pageSpacing = 10.dp,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(72.dp)
-                            ) { page ->
-                                val item = radarItems[page]
-                                val isSelected = (item.id == focusedItem?.id)
-
-                                Surface(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(72.dp)
-                                        .clip(RoundedCornerShape(16.dp))
-                                        .clickable {
-                                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                            selectedItemForSheet = item
-                                        },
-                                    color = Color(0xFF121722).copy(alpha = 0.90f),
-                                    border = BorderStroke(
-                                        width = if (isSelected) 1.2.dp else 0.8.dp,
-                                        color = if (isSelected) Color(0xFF00F0FF) else Color(0xFF1E2638)
-                                    )
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        // Generative vinyl icon with 12dp protruding record affordance
-                                        Box(
-                                            modifier = Modifier.size(46.dp),
-                                            contentAlignment = Alignment.CenterStart
-                                        ) {
-                                            // Protruding dark vinyl record on the right
-                                            Canvas(
-                                                modifier = Modifier
-                                                    .size(34.dp)
-                                                    .offset(x = 12.dp)
-                                            ) {
-                                                drawCircle(
-                                                    color = Color(0xFF1E2638),
-                                                    radius = size.minDimension / 2f
-                                                )
-                                                drawCircle(
-                                                    color = Color(0xFF0B0E14),
-                                                    radius = size.minDimension / 4f
-                                                )
-                                            }
-                                            // Cover sleeve
-                                            Surface(
-                                                modifier = Modifier
-                                                    .size(38.dp)
-                                                    .clip(RoundedCornerShape(8.dp)),
-                                                color = Color(item.colorHex).copy(alpha = 0.25f),
-                                                border = BorderStroke(0.6.dp, Color(item.colorHex))
-                                            ) {
-                                                Box(contentAlignment = Alignment.Center) {
-                                                    Text(
-                                                        text = "✦",
-                                                        color = Color(item.colorHex),
-                                                        fontSize = 14.sp
-                                                    )
-                                                }
-                                            }
-                                        }
-
-                                        // Track info with poetic distance ring
-                                        Column(
-                                            modifier = Modifier.weight(1f),
-                                            verticalArrangement = Arrangement.Center
-                                        ) {
-                                            Text(
-                                                text = item.title,
-                                                color = Color.White,
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                text = item.subtitle,
-                                                color = Color(0xFF94A3B8),
-                                                fontSize = 12.sp,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                            Text(
-                                                text = formatPoeticDistance(item.ringFactor),
-                                                color = Color(0xFF00F0FF),
-                                                fontSize = 10.5.sp,
-                                                fontWeight = FontWeight.Medium
-                                            )
-                                        }
-
-                                        // Tap prompt arrow
-                                        Text(
-                                            text = "›",
-                                            color = Color(0xFF64748B),
-                                            fontSize = 20.sp
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // B. Single Floating Capsule Action Button (48x48dp, Warm Amber)
-                    Surface(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                showDropCapsuleDialog = true
-                            },
-                        color = Color(0xFFF59E0B).copy(alpha = 0.15f),
-                        border = BorderStroke(1.dp, Color(0xFFF59E0B))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Box(contentAlignment = Alignment.Center) {
+                        Text(text = inc.symbol, fontSize = 22.sp)
+                        Column {
                             Text(
-                                text = "⏳",
-                                fontSize = 18.sp
+                                text = "Импульс от ${inc.senderId}",
+                                color = Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = inc.message,
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.5.sp
                             )
                         }
                     }
+                    Text(
+                        text = "✕",
+                        color = Color(0xFF64748B),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
     }
 
-    // -------------------------------------------------------------
-    // MODAL BOTTOM SHEET: TASTE OVERLAP ("МОСТ СОЗВУЧИЯ")
-    // -------------------------------------------------------------
-    if (selectedItemForSheet != null) {
-        val item = selectedItemForSheet!!
-        ModalBottomSheet(
-            onDismissRequest = { selectedItemForSheet = null },
-            containerColor = Color(0xFF121722),
-            dragHandle = {
-                Box(
-                    modifier = Modifier
-                        .padding(top = 10.dp, bottom = 6.dp)
-                        .size(width = 36.dp, height = 4.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(Color(0xFF334155))
-                )
-            }
-        ) {
-            TasteOverlapContent(
-                item = item,
-                onDismiss = { selectedItemForSheet = null }
-            )
-        }
-    }
+    // =========================================================
+    // MODAL DIALOGS
+    // =========================================================
 
-    // -------------------------------------------------------------
-    // DIALOG: "ВАШ ЭФИР" (CURRENT TRACK & PLAYER STATUS)
-    // -------------------------------------------------------------
-    if (showMyTrackDialog) {
+    // A. Curator Observation & Story Modal
+    if (showCuratorObservationDialog) {
         AlertDialog(
-            onDismissRequest = { showMyTrackDialog = false },
-            containerColor = Color(0xFF121722),
+            onDismissRequest = { showCuratorObservationDialog = false },
+            containerColor = Color(0xFF111622),
             title = {
-                Text("Ваш эфир", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(
+                    text = "✦ ${activeTrack.poeticPersona}",
+                    color = Color(0xFF00F0FF),
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        text = if (!currentTrack.title.isNullOrBlank())
-                            "В наушниках: ${currentTrack.artist} — ${currentTrack.title}"
-                        else
-                            "Ожидание музыки... Включите плеер на телефоне или ПК",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 13.5.sp
+                        text = "\"${activeTrack.observation}\"",
+                        color = Color(0xFFE2E8F0),
+                        fontSize = 14.sp,
+                        fontStyle = FontStyle.Italic,
+                        lineHeight = 20.sp
                     )
-
-                    HorizontalDivider(color = Color(0xFF1E2638))
-
-                    Button(
-                        onClick = {
-                            val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                            context.startActivity(intent)
-                            showMyTrackDialog = false
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("🎧 Проверить слух эфира (Разрешения)", color = Color(0xFF00F0FF))
-                    }
-
-                    OutlinedButton(
-                        onClick = {
-                            showMyTrackDialog = false
-                            showManualTrackDialog = true
-                        },
-                        border = BorderStroke(0.8.dp, Color(0xFF334155)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("✍ Ввести трек вручную", color = Color.White)
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Вещание присутствия", color = Color.White, fontSize = 13.sp)
-                        Switch(
-                            checked = isPresenceActive,
-                            onCheckedChange = { EchoStateRepository.togglePresence() },
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color(0xFF00F0FF),
-                                checkedTrackColor = Color(0xFF00F0FF).copy(alpha = 0.25f)
-                            )
-                        )
-                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(0.8.dp)
+                            .background(Color(0xFF1E283C))
+                    )
+                    Text(
+                        text = activeTrack.story,
+                        color = Color(0xFF94A3B8),
+                        fontSize = 12.5.sp,
+                        lineHeight = 18.sp
+                    )
+                    Text(
+                        text = "Звучит через: ${activeTrack.sourceApp}",
+                        color = Color(0xFF64748B),
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showMyTrackDialog = false }) {
+                TextButton(onClick = { showCuratorObservationDialog = false }) {
                     Text("Закрыть", color = Color(0xFF00F0FF))
                 }
             }
         )
     }
 
-    // -------------------------------------------------------------
-    // SECRET DIALOG: SERVER SETTINGS (HIDDEN FROM MAIN UI)
-    // -------------------------------------------------------------
-    if (showServerSettingsDialog) {
-        var tempHost by remember { mutableStateOf(serverHost) }
-        AlertDialog(
-            onDismissRequest = { showServerSettingsDialog = false },
-            containerColor = Color(0xFF121722),
-            title = {
-                Text("Частота сервера (Секретно)", color = Color.White, fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Адрес узла ЭХО в локальной сети или Cloudflare:",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 12.sp
-                    )
-                    OutlinedTextField(
-                        value = tempHost,
-                        onValueChange = { tempHost = it },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = Color(0xFF00F0FF),
-                            unfocusedBorderColor = Color(0xFF1E2638),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        EchoStateRepository.setServerHost(tempHost.trim())
-                        showServerSettingsDialog = false
-                    }
-                ) {
-                    Text("Сохранить", color = Color(0xFF00F0FF))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showServerSettingsDialog = false }) {
-                    Text("Отмена", color = Color(0xFF64748B))
-                }
-            }
-        )
-    }
-
-    // -------------------------------------------------------------
-    // DIALOG: MANUAL TRACK INPUT (TEST FALLBACK)
-    // -------------------------------------------------------------
+    // B. Manual Track Input Modal
     if (showManualTrackDialog) {
-        var artist by remember { mutableStateOf("") }
-        var title by remember { mutableStateOf("") }
+        var inputArtist by remember { mutableStateOf(currentPlayingTrack.artist.takeIf { !it.startsWith("Ожидание") } ?: "") }
+        var inputTitle by remember { mutableStateOf(currentPlayingTrack.title.takeIf { !it.startsWith("Включите") } ?: "") }
+
         AlertDialog(
             onDismissRequest = { showManualTrackDialog = false },
-            containerColor = Color(0xFF121722),
-            title = { Text("Ручной ввод трека", color = Color.White) },
+            containerColor = Color(0xFF111622),
+            title = {
+                Text("Поставить свой винил в эфир", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     OutlinedTextField(
-                        value = artist,
-                        onValueChange = { artist = it },
-                        label = { Text("Исполнитель") },
+                        value = inputArtist,
+                        onValueChange = { inputArtist = it },
+                        label = { Text("Исполнитель", color = Color(0xFF94A3B8)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF00F0FF),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        ),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
                     )
                     OutlinedTextField(
-                        value = title,
-                        onValueChange = { title = it },
-                        label = { Text("Название трека") },
+                        value = inputTitle,
+                        onValueChange = { inputTitle = it },
+                        label = { Text("Название трека", color = Color(0xFF94A3B8)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF00F0FF),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        ),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        text = "Либо откройте Яндекс Музыку, VK или Spotify — перехват работает автоматически.",
+                        color = Color(0xFF64748B),
+                        fontSize = 11.sp
                     )
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        if (title.isNotBlank()) {
-                            EchoStateRepository.updateDetectedMusic(
-                                artist = artist.ifBlank { "Неизвестный автор" },
-                                title = title,
-                                packageName = "manual"
-                            )
+                        if (inputArtist.isNotBlank() && inputTitle.isNotBlank()) {
+                            EchoStateRepository.updateDetectedMusic(inputArtist.trim(), inputTitle.trim(), "manual")
+                            selectedVinyl = null
                         }
                         showManualTrackDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F0FF))
                 ) {
-                    Text("В эфир", color = Color(0xFF0B0E14))
+                    Text("В эфир", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showManualTrackDialog = false }) {
-                    Text("Отмена", color = Color(0xFF64748B))
+                TextButton(onClick = {
+                    val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                    context.startActivity(intent)
+                }) {
+                    Text("Настройки доступа", color = Color(0xFF94A3B8), fontSize = 12.sp)
                 }
             }
         )
     }
 
-    // -------------------------------------------------------------
-    // DIALOG: DROP CAPSULE (ТАЙНИК)
-    // -------------------------------------------------------------
+    // C. Leave Musical Capsule Modal
     if (showDropCapsuleDialog) {
-        var message by remember { mutableStateOf("") }
+        var capArtist by remember { mutableStateOf(currentPlayingTrack.artist.takeIf { !it.startsWith("Ожидание") } ?: "") }
+        var capTitle by remember { mutableStateOf(currentPlayingTrack.title.takeIf { !it.startsWith("Включите") } ?: "") }
+        var capNote by remember { mutableStateOf("") }
+
         AlertDialog(
             onDismissRequest = { showDropCapsuleDialog = false },
-            containerColor = Color(0xFF121722),
-            title = { Text("Оставить музыкальный тайник", color = Color(0xFFF59E0B)) },
+            containerColor = Color(0xFF111622),
+            title = {
+                Text("Оставить виниловый тайник", color = Color(0xFFFFB800), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "Капсула с вашим треком и тайным посланием сохранится в этой точке города на 24 часа.",
+                        text = "Тайник останется на карте города для других ночных слушателей.",
                         color = Color(0xFF94A3B8),
                         fontSize = 12.sp
                     )
                     OutlinedTextField(
-                        value = message,
-                        onValueChange = { message = it },
-                        label = { Text("Шёпот тайника (записка)") },
+                        value = capArtist,
+                        onValueChange = { capArtist = it },
+                        label = { Text("Исполнитель", color = Color(0xFF94A3B8)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFFFFB800),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = capTitle,
+                        onValueChange = { capTitle = it },
+                        label = { Text("Название трека", color = Color(0xFF94A3B8)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFFFFB800),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = capNote,
+                        onValueChange = { capNote = it },
+                        label = { Text("Поэтическое послание", color = Color(0xFF94A3B8)) },
+                        placeholder = { Text("Здесь звучал ночной джаз в тумане...", color = Color(0xFF475569)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFFFFB800),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        ),
+                        maxLines = 3,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
@@ -879,21 +716,91 @@ fun EchoMainScreen() {
             confirmButton = {
                 Button(
                     onClick = {
-                        EchoStateRepository.dropCapsule(
-                            artist = currentTrack.artist ?: "Ночной странник",
-                            title = currentTrack.title ?: "Безмолвие",
-                            secretMessage = message.ifBlank { "Тихий след в ночном эфире." }
-                        )
+                        if (capArtist.isNotBlank() && capTitle.isNotBlank()) {
+                            EchoStateRepository.dropCapsule(
+                                artist = capArtist.trim(),
+                                title = capTitle.trim(),
+                                secretMessage = capNote.trim().ifBlank { "Музыкальный след ночного странника." }
+                            ) { ok ->
+                                reactionSentFeedback = if (ok) "Тайник заложен на карте!" else "Ошибка сети"
+                            }
+                        }
                         showDropCapsuleDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFB800))
                 ) {
-                    Text("Запечатать", color = Color(0xFF0B0E14), fontWeight = FontWeight.Bold)
+                    Text("Заложить тайник", color = Color.Black, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDropCapsuleDialog = false }) {
-                    Text("Отмена", color = Color(0xFF64748B))
+                    Text("Отмена", color = Color(0xFF94A3B8))
+                }
+            }
+        )
+    }
+
+    // D. Server Host & Token Settings Modal
+    if (showServerSettingsDialog) {
+        var inputHost by remember { mutableStateOf(serverHost) }
+        var inputToken by remember { mutableStateOf(EchoStateRepository.echoToken.value) }
+
+        AlertDialog(
+            onDismissRequest = { showServerSettingsDialog = false },
+            containerColor = Color(0xFF111622),
+            title = {
+                Text("Параметры соединения ЭХО", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Текущий статус: $connectionStatusStr",
+                        color = if (isConnected) Color(0xFF00F0FF) else Color(0xFFE11D48),
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace
+                    )
+                    OutlinedTextField(
+                        value = inputHost,
+                        onValueChange = { inputHost = it },
+                        label = { Text("Адрес сервера (ПК или Cloudflare)", color = Color(0xFF94A3B8)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF00F0FF),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    OutlinedTextField(
+                        value = inputToken,
+                        onValueChange = { inputToken = it },
+                        label = { Text("Токен доступа (X-Echo-Token)", color = Color(0xFF94A3B8)) },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color(0xFF00F0FF),
+                            unfocusedBorderColor = Color(0xFF334155)
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        EchoStateRepository.setServerHost(inputHost.trim(), inputToken.trim())
+                        showServerSettingsDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F0FF))
+                ) {
+                    Text("Сохранить", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showServerSettingsDialog = false }) {
+                    Text("Закрыть", color = Color(0xFF94A3B8))
                 }
             }
         )
@@ -901,244 +808,685 @@ fun EchoMainScreen() {
 }
 
 // -------------------------------------------------------------
-// TASTE OVERLAP CONTENT (THE "МОСТ СОЗВУЧИЯ" MODAL BOTTOM SHEET)
+// VINYL CITY MAP CANVAS (ZENLY / SNAP MAP STYLE)
 // -------------------------------------------------------------
 @Composable
-fun TasteOverlapContent(
-    item: RadarItem,
-    onDismiss: () -> Unit
+fun VinylCityMapCanvas(
+    allVinyls: List<VinylTrack>,
+    selectedVinyl: VinylTrack?,
+    neonPulse: Float,
+    laserPhotonProgress: Float,
+    onVinylSelected: (VinylTrack) -> Unit,
+    onCenterUserClicked: () -> Unit
 ) {
-    val context = LocalContext.current
-    val haptic = LocalHapticFeedback.current
+    Box(modifier = Modifier.fillMaxSize()) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(allVinyls, selectedVinyl) {
+                    detectTapGestures { tapOffset ->
+                        val center = Offset(size.width / 2f, size.height / 2f)
+                        val maxR = minOf(size.width, size.height) * 0.44f
 
-    // Spring animation for vinyl sleeve reveal
-    var isVinylRevealed by remember { mutableStateOf(false) }
-    val vinylOffset by animateDpAsState(
-        targetValue = if (isVinylRevealed) 68.dp else 0.dp,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessLow
-        ),
-        label = "VinylSlide"
-    )
-
-    // Infinite rotation for spinning vinyl record
-    val infiniteTransition = rememberInfiniteTransition(label = "VinylSpin")
-    val vinylRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(8000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "SpinAngle"
-    )
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 12.dp)
-            .navigationBarsPadding(),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        // 1. Header with Vinyl Easter Egg Affordance
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                // Interactive Vinyl Sleeve Box
-                Box(
-                    modifier = Modifier
-                        .size(62.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            isVinylRevealed = !isVinylRevealed
-                        },
-                    contentAlignment = Alignment.CenterStart
-                ) {
-                    // Sliding and spinning vinyl record
-                    Canvas(
-                        modifier = Modifier
-                            .size(54.dp)
-                            .offset(x = vinylOffset)
-                            .rotate(vinylRotation)
-                    ) {
-                        drawCircle(color = Color(0xFF1E2638))
-                        drawCircle(color = Color(0xFF0F141C), radius = size.minDimension * 0.42f)
-                        drawCircle(color = Color(item.colorHex), radius = size.minDimension * 0.18f)
-                    }
-
-                    // Card sleeve
-                    Surface(
-                        modifier = Modifier
-                            .size(58.dp)
-                            .clip(RoundedCornerShape(8.dp)),
-                        color = Color(item.colorHex).copy(alpha = 0.25f),
-                        border = BorderStroke(0.8.dp, Color(item.colorHex))
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Text(text = "✦", color = Color(item.colorHex), fontSize = 22.sp)
+                        // Check tap on center user beacon
+                        val distCenter = sqrt(
+                            (tapOffset.x - center.x) * (tapOffset.x - center.x) +
+                            (tapOffset.y - center.y) * (tapOffset.y - center.y)
+                        )
+                        if (distCenter < 38.dp.toPx()) {
+                            onCenterUserClicked()
+                            return@detectTapGestures
                         }
+
+                        // Check tap on mini vinyls
+                        var clickedVinyl: VinylTrack? = null
+                        var minDistance = 44.dp.toPx()
+
+                        allVinyls.forEach { vinyl ->
+                            val jitter = (vinyl.id.hashCode() % 25 - 12) * 0.35f
+                            val rad = Math.toRadians((vinyl.angleDeg + jitter).toDouble())
+                            val r = maxR * vinyl.ringFactor.coerceIn(0.24f, 0.92f)
+                            val vx = center.x + (r * cos(rad)).toFloat()
+                            val vy = center.y + (r * sin(rad)).toFloat()
+
+                            val d = sqrt((tapOffset.x - vx) * (tapOffset.x - vx) + (tapOffset.y - vy) * (tapOffset.y - vy))
+                            if (d < minDistance) {
+                                minDistance = d
+                                clickedVinyl = vinyl
+                            }
+                        }
+
+                        clickedVinyl?.let { onVinylSelected(it) }
                     }
                 }
+        ) {
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val maxR = minOf(size.width, size.height) * 0.44f
 
-                Column {
-                    Text(
-                        text = item.title,
+            // A. PROCEDURAL NIGHT CITY MAP (Streets, River, Blocks)
+            // 1. River Waterway
+            val riverPath = Path().apply {
+                moveTo(-50f, size.height * 0.22f)
+                cubicTo(
+                    size.width * 0.35f, size.height * 0.12f,
+                    size.width * 0.65f, size.height * 0.45f,
+                    size.width + 60f, size.height * 0.38f
+                )
+            }
+            drawPath(
+                path = riverPath,
+                color = Color(0xFF0A2234).copy(alpha = 0.85f),
+                style = Stroke(width = 38.dp.toPx(), cap = StrokeCap.Round)
+            )
+            drawPath(
+                path = riverPath,
+                color = Color(0xFF00F0FF).copy(alpha = 0.15f),
+                style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round)
+            )
+
+            // 2. City Street Grid (Stylized Night Arteries)
+            val streetColor = Color(0xFF141B28)
+            val avenueColor = Color(0xFFFFB800).copy(alpha = 0.08f)
+
+            // Horizontal & diagonal avenues
+            drawLine(
+                color = avenueColor,
+                start = Offset(0f, size.height * 0.52f),
+                end = Offset(size.width, size.height * 0.52f),
+                strokeWidth = 14.dp.toPx()
+            )
+            drawLine(
+                color = avenueColor,
+                start = Offset(size.width * 0.15f, 0f),
+                end = Offset(size.width * 0.85f, size.height),
+                strokeWidth = 12.dp.toPx()
+            )
+
+            // Grid streets
+            for (step in 1..4) {
+                val y = size.height * (step / 5f)
+                drawLine(
+                    color = streetColor,
+                    start = Offset(0f, y),
+                    end = Offset(size.width, y),
+                    strokeWidth = 2.dp.toPx()
+                )
+            }
+            for (step in 1..4) {
+                val x = size.width * (step / 5f)
+                drawLine(
+                    color = streetColor,
+                    start = Offset(x, 0f),
+                    end = Offset(x, size.height),
+                    strokeWidth = 2.dp.toPx()
+                )
+            }
+
+            // B. CONCENTRIC DISTANCE ACOUSTIC RINGS
+            val ringRadii = listOf(maxR * 0.35f, maxR * 0.65f, maxR * 0.95f)
+            ringRadii.forEachIndexed { idx, radius ->
+                drawCircle(
+                    color = Color(0xFF1E283C).copy(alpha = 0.6f),
+                    radius = radius,
+                    center = center,
+                    style = Stroke(width = 1.dp.toPx())
+                )
+            }
+
+            // C. RESONANCE LASER CHORD TO SELECTED VINYL
+            selectedVinyl?.let { target ->
+                if (!target.isSelf) {
+                    val jitter = (target.id.hashCode() % 25 - 12) * 0.35f
+                    val rad = Math.toRadians((target.angleDeg + jitter).toDouble())
+                    val r = maxR * target.ringFactor.coerceIn(0.24f, 0.92f)
+                    val targetOffset = Offset(
+                        center.x + (r * cos(rad)).toFloat(),
+                        center.y + (r * sin(rad)).toFloat()
+                    )
+
+                    val chordColor = Color(target.colorHex)
+                    // Outer diffuse glow
+                    drawLine(
+                        color = chordColor.copy(alpha = 0.22f),
+                        start = center,
+                        end = targetOffset,
+                        strokeWidth = 6.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
+                    // Bright core beam
+                    drawLine(
+                        color = chordColor.copy(alpha = 0.85f),
+                        start = center,
+                        end = targetOffset,
+                        strokeWidth = 1.8.dp.toPx(),
+                        cap = StrokeCap.Round
+                    )
+
+                    // Traveling photon packet
+                    val photonPos = Offset(
+                        center.x + (targetOffset.x - center.x) * laserPhotonProgress,
+                        center.y + (targetOffset.y - center.y) * laserPhotonProgress
+                    )
+                    drawCircle(
                         color = Color.White,
-                        fontSize = 19.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        radius = 3.5.dp.toPx(),
+                        center = photonPos
                     )
-                    Text(
-                        text = item.subtitle,
-                        color = Color(0xFF94A3B8),
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        text = formatPoeticDistance(item.ringFactor),
-                        color = Color(0xFF00F0FF),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold
+                    drawCircle(
+                        color = chordColor.copy(alpha = 0.5f),
+                        radius = 8.dp.toPx(),
+                        center = photonPos
                     )
                 }
             }
 
-            IconButton(onClick = onDismiss) {
-                Text("✕", color = Color(0xFF64748B), fontSize = 16.sp)
+            // D. FLOATING MINI VINYL RECORDS
+            allVinyls.forEach { vinyl ->
+                val jitter = (vinyl.id.hashCode() % 25 - 12) * 0.35f
+                val rad = Math.toRadians((vinyl.angleDeg + jitter).toDouble())
+                val r = maxR * vinyl.ringFactor.coerceIn(0.24f, 0.92f)
+                val pos = Offset(
+                    center.x + (r * cos(rad)).toFloat(),
+                    center.y + (r * sin(rad)).toFloat()
+                )
+
+                val isFocused = selectedVinyl?.id == vinyl.id
+                val vinylBaseColor = Color(vinyl.colorHex)
+
+                // 1. Neon puddle reflection on ground
+                drawCircle(
+                    color = vinylBaseColor.copy(alpha = if (isFocused) 0.35f else 0.15f),
+                    radius = (if (isFocused) 26.dp else 18.dp).toPx() * neonPulse,
+                    center = pos
+                )
+
+                // 2. Mini Vinyl Disc (Grooved body)
+                val discRadius = (if (isFocused) 16.dp else 12.dp).toPx()
+                drawCircle(
+                    color = Color(0xFF141720),
+                    radius = discRadius,
+                    center = pos
+                )
+                // Outer edge ring
+                drawCircle(
+                    color = if (isFocused) vinylBaseColor else Color(0xFF2D3748),
+                    radius = discRadius,
+                    center = pos,
+                    style = Stroke(width = if (isFocused) 1.8.dp.toPx() else 1.dp.toPx())
+                )
+                // Micro groove line
+                drawCircle(
+                    color = Color(0xFF222B3D),
+                    radius = discRadius * 0.65f,
+                    center = pos,
+                    style = Stroke(width = 0.8.dp.toPx())
+                )
+                // Center colored label
+                drawCircle(
+                    color = vinylBaseColor,
+                    radius = discRadius * 0.38f,
+                    center = pos
+                )
+                // Center spindle hole
+                drawCircle(
+                    color = Color.Black,
+                    radius = discRadius * 0.12f,
+                    center = pos
+                )
+            }
+
+            // E. USER CENTER POSITION (Core Turntable Beacon)
+            val userCoreColor = Color(0xFF00F0FF)
+            // Breathing aura ring
+            drawCircle(
+                color = userCoreColor.copy(alpha = 0.18f),
+                radius = 28.dp.toPx() * neonPulse,
+                center = center
+            )
+            // Solid dark center player disc
+            drawCircle(
+                color = Color(0xFF0E1420),
+                radius = 16.dp.toPx(),
+                center = center
+            )
+            drawCircle(
+                color = userCoreColor,
+                radius = 16.dp.toPx(),
+                center = center,
+                style = Stroke(width = 2.dp.toPx())
+            )
+            // Inner cyan spindle core
+            drawCircle(
+                color = userCoreColor,
+                radius = 6.dp.toPx(),
+                center = center
+            )
+        }
+
+        // F. FLOATING CALLOUT BADGES FOR MINI VINYLS
+        allVinyls.forEach { vinyl ->
+            val isFocused = selectedVinyl?.id == vinyl.id
+            if (isFocused) {
+                MiniVinylCalloutPill(
+                    vinyl = vinyl,
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun MiniVinylCalloutPill(vinyl: VinylTrack, modifier: Modifier = Modifier) {
+    Surface(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp)),
+        color = Color(0xFF101624).copy(alpha = 0.95f),
+        border = BorderStroke(1.dp, Color(vinyl.colorHex).copy(alpha = 0.7f)),
+        shadowElevation = 8.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(text = "♫", color = Color(vinyl.colorHex), fontSize = 12.sp)
+            Text(
+                text = "${vinyl.artist} — ${vinyl.title}",
+                color = Color.White,
+                fontSize = 11.5.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "• ${vinyl.distanceLabel}",
+                color = Color(0xFF94A3B8),
+                fontSize = 10.5.sp
+            )
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// TACTILE TURNTABLE DECK VIEW (THUMB ZONE)
+// -------------------------------------------------------------
+@Composable
+fun TurntableDeckView(
+    activeTrack: VinylTrack,
+    coverUrl: String?,
+    isSpinning: Boolean,
+    rotationAngle: Float,
+    onToggleSpin: () -> Unit,
+    onOpenInMusicApp: () -> Unit,
+    onSendReaction: (String) -> Unit,
+    onOpenCuratorStory: () -> Unit,
+    onSelectSelf: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        // Upper Deck Section: Platter (Left) + Big Legible Metadata (Right)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // 1. ROTATING VINYL PLATTER WITH COVER ART & TONEARM
+            Box(
+                modifier = Modifier
+                    .size(140.dp)
+                    .clickable { onToggleSpin() },
+                contentAlignment = Alignment.Center
+            ) {
+                // Platter Well / Shadow
+                Box(
+                    modifier = Modifier
+                        .size(136.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF07090E))
+                )
+
+                // Spinning Vinyl Platter
+                Canvas(
+                    modifier = Modifier
+                        .size(130.dp)
+                        .rotate(rotationAngle)
+                ) {
+                    val radius = size.minDimension / 2f
+                    val center = Offset(size.width / 2f, size.height / 2f)
+
+                    // Vinyl Base
+                    drawCircle(color = Color(0xFF13171F), radius = radius, center = center)
+
+                    // Concentric Grooves
+                    for (g in 1..5) {
+                        drawCircle(
+                            color = Color(0xFF222B3A).copy(alpha = 0.7f),
+                            radius = radius * (0.45f + g * 0.1f),
+                            center = center,
+                            style = Stroke(width = 0.9.dp.toPx())
+                        )
+                    }
+
+                    // Specular Sheen (Vinyl Light Reflection Gradient)
+                    drawCircle(
+                        brush = Brush.sweepGradient(
+                            listOf(
+                                Color.Transparent,
+                                Color.White.copy(alpha = 0.08f),
+                                Color.Transparent,
+                                Color.White.copy(alpha = 0.08f),
+                                Color.Transparent
+                            ),
+                            center = center
+                        ),
+                        radius = radius,
+                        center = center
+                    )
+                }
+
+                // Center Circular Album Artwork / Generative Label
+                Box(
+                    modifier = Modifier
+                        .size(56.dp)
+                        .rotate(rotationAngle)
+                        .clip(CircleShape)
+                        .background(Color(activeTrack.colorHex)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!coverUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = coverUrl,
+                            contentDescription = "Album Cover",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        // Generative Stylized Label
+                        Column(
+                            horizontalAlignment = Alignment.CenterVertically,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "33⅓",
+                                color = Color.Black.copy(alpha = 0.75f),
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "ЭХО",
+                                color = Color.Black,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                    }
+
+                    // Brass Spindle Core
+                    Box(
+                        modifier = Modifier
+                            .size(10.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFE2E8F0))
+                            .border(1.5.dp, Color(0xFF0F1420), CircleShape)
+                    )
+                }
+
+                // Stylized Tonearm & Glowing Needle Overlay
+                TonearmOverlay(isSpinning = isSpinning)
+            }
+
+            // 2. TRACK METADATA & POETIC TAGS (Big, Readable, Clean)
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxHeight(),
+                verticalArrangement = Arrangement.Center
+            ) {
+                // Poetic Tag / Resonance Badge
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(Color(activeTrack.colorHex))
+                    )
+                    Text(
+                        text = if (activeTrack.isSelf) "ВАШ ВИНИЛ В ЭФИРЕ" else "${activeTrack.compatibility}% РЕЗОНАНС • ${activeTrack.distanceLabel}",
+                        color = Color(activeTrack.colorHex),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp,
+                        maxLines = 1
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                // Big Track Title
+                Text(
+                    text = activeTrack.title,
+                    color = Color.White,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                // Artist Name
+                Text(
+                    text = activeTrack.artist,
+                    color = Color(0xFF38BDF8),
+                    fontSize = 14.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Poetic Persona Button
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { onOpenCuratorStory() },
+                    color = Color(0xFF161E2D),
+                    border = BorderStroke(0.6.dp, Color(0xFF25334A))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(text = "✦", color = Color(0xFF00F0FF), fontSize = 11.sp)
+                        Text(
+                            text = activeTrack.poeticPersona,
+                            color = Color(0xFFE2E8F0),
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
         }
 
-        HorizontalDivider(color = Color(0xFF1E2638))
-
-        // 2. Poetic Archetype & Taste Overlap Essay (0ms latency local fallback)
-        Surface(
+        // Lower Deck Section: 1-Click Launch Button + 5 Vector Resonance Glyphs
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            color = Color(0xFF0B0E14).copy(alpha = 0.6f),
-            border = BorderStroke(0.6.dp, Color(0xFF1E2638))
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Column(
-                modifier = Modifier.padding(14.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+            // A. Primary 1-Click Music Launch Bar
+            Button(
+                onClick = onOpenInMusicApp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(46.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F0FF)),
+                shape = RoundedCornerShape(14.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    Text(text = "▶", color = Color.Black, fontSize = 14.sp)
                     Text(
-                        text = if (item is RadarItem.SignalNode) item.signal.poeticName else "Тайник полуночи",
-                        color = Color(0xFF00F0FF),
+                        text = "Слушать в плеере (${activeTrack.sourceApp})",
+                        color = Color.Black,
                         fontSize = 13.5.sp,
                         fontWeight = FontWeight.Bold
                     )
-                    Text(
-                        text = "• 88% созвучие",
-                        color = Color(0xFF64748B),
-                        fontSize = 11.5.sp
-                    )
                 }
-                Text(
-                    text = if (item is RadarItem.SignalNode)
-                        item.signal.resonanceStory.ifBlank { "Вы оба слушаете глубокую вечернюю музыку в этот тихий час." }
-                    else
-                        (item as RadarItem.CapsuleNode).capsule.secretMessage,
-                    color = Color(0xFFCBD5E1),
-                    fontSize = 12.5.sp,
-                    fontStyle = FontStyle.Italic,
-                    lineHeight = 18.sp
-                )
             }
-        }
 
-        // 3. Five Custom Vector Wireframe Glyphs (NO colored system emojis!)
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(
-                text = "ОТПРАВИТЬ СИМВОЛ РЕЗОНАНСА",
-                color = Color(0xFF64748B),
-                fontSize = 10.5.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = 1.sp
-            )
-
+            // B. 5 Vector Atmospheric Resonance Glyphs Bar
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                listOf(
-                    Pair("✦", "Волна"),
-                    Pair("✨", "Искра"),
-                    Pair("🌙", "Шёпот"),
-                    Pair("🌲", "Лес"),
-                    Pair("⚡", "Резонанс")
-                ).forEach { (glyph, label) ->
+                val glyphs = listOf(
+                    Triple("✦", "Резонанс", Color(0xFF00F0FF)),
+                    Triple("✨", "Созвучие", Color(0xFFA855F7)),
+                    Triple("🌙", "Ночь", Color(0xFF38BDF8)),
+                    Triple("🌲", "Туман", Color(0xFF10B981)),
+                    Triple("⚡", "Искра", Color(0xFFFFB800))
+                )
+
+                glyphs.forEach { (glyph, label, glyphColor) ->
                     Surface(
                         modifier = Modifier
-                            .size(56.dp)
+                            .weight(1f)
+                            .padding(horizontal = 3.dp)
                             .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                EchoStateRepository.sendReaction(item.id, glyph)
-                            },
-                        color = Color(0xFF161D2C),
-                        border = BorderStroke(0.8.dp, Color(0xFF1E2638))
+                            .clickable { onSendReaction(glyph) },
+                        color = Color(0xFF121824),
+                        border = BorderStroke(0.8.dp, glyphColor.copy(alpha = 0.35f))
                     ) {
                         Column(
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterVertically,
                             verticalArrangement = Arrangement.Center
                         ) {
-                            Text(
-                                text = glyph,
-                                color = Color.White,
-                                fontSize = 17.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                text = label,
-                                color = Color(0xFF64748B),
-                                fontSize = 9.sp
-                            )
+                            Text(text = glyph, color = glyphColor, fontSize = 16.sp)
+                            Text(text = label, color = Color(0xFF94A3B8), fontSize = 9.sp)
                         }
                     }
                 }
             }
+
+            // C. Quick Return to Own Track
+            if (!activeTrack.isSelf) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    TextButton(onClick = onSelectSelf) {
+                        Text(
+                            text = "Вернуться к моему винилу ♫",
+                            color = Color(0xFF94A3B8),
+                            fontSize = 11.5.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// ANALOG TONEARM WITH GLOWING NEEDLE COMPOSABLE
+// -------------------------------------------------------------
+@Composable
+fun TonearmOverlay(isSpinning: Boolean) {
+    val tonearmAngle by animateFloatAsState(
+        targetValue = if (isSpinning) 28f else 0f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow),
+        label = "TonearmMovement"
+    )
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxSize()
+            .rotate(tonearmAngle)
+    ) {
+        val pivot = Offset(size.width * 0.88f, size.height * 0.12f)
+        val needleTip = Offset(size.width * 0.52f, size.height * 0.72f)
+
+        // Tonearm Pivot Base
+        drawCircle(
+            color = Color(0xFF334155),
+            radius = 7.dp.toPx(),
+            center = pivot
+        )
+        drawCircle(
+            color = Color(0xFF64748B),
+            radius = 3.5.dp.toPx(),
+            center = pivot
+        )
+
+        // Metallic Tonearm Tube
+        drawLine(
+            color = Color(0xFFCBD5E1),
+            start = pivot,
+            end = needleTip,
+            strokeWidth = 2.4.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+
+        // Cartridge Head & Glowing Stylus Tip
+        drawCircle(
+            color = Color(0xFF1E293B),
+            radius = 4.dp.toPx(),
+            center = needleTip
+        )
+        drawCircle(
+            color = Color(0xFF00F0FF),
+            radius = 2.2.dp.toPx(),
+            center = needleTip
+        )
+    }
+}
+
+// -------------------------------------------------------------
+// INTENT HELPER: OPEN 1-CLICK IN MUSIC APPS
+// -------------------------------------------------------------
+fun openMusicApp(context: Context, artist: String, title: String, sourceApp: String) {
+    val query = "$artist $title".trim()
+    if (query.isBlank() || artist.startsWith("Ожидание")) return
+
+    try {
+        val encodedQuery = URLEncoder.encode(query, "UTF-8")
+        val isYandex = sourceApp.contains("yandex", ignoreCase = true) || sourceApp.contains("яндекс", ignoreCase = true)
+        val isSpotify = sourceApp.contains("spotify", ignoreCase = true)
+
+        val uri = when {
+            isYandex -> Uri.parse("yandexmusic://search?text=$encodedQuery")
+            isSpotify -> Uri.parse("spotify:search:$encodedQuery")
+            else -> Uri.parse("https://music.yandex.ru/search?text=$encodedQuery")
         }
 
-        // 4. Hero Action: 1-Click Shazam-Style Stream Launch
-        Button(
-            onClick = {
-                val query = URLEncoder.encode("${item.subtitle} ${item.title}", "UTF-8")
-                val yandexMusicUri = Uri.parse("yandexmusic://search?text=$query")
-                val intent = Intent(Intent.ACTION_VIEW, yandexMusicUri).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                try {
-                    context.startActivity(intent)
-                } catch (e: Exception) {
-                    val webIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://music.yandex.ru/search?text=$query"))
-                    context.startActivity(webIntent)
-                }
-            },
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F0FF)),
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-        ) {
-            Text(
-                text = "▷  Слушать в Яндекс Музыке / Плеере",
-                color = Color(0xFF0B0E14),
-                fontWeight = FontWeight.Bold,
-                fontSize = 13.5.sp
-            )
+        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
+        context.startActivity(intent)
+    } catch (_: Exception) {
+        // Fallback to browser search
+        try {
+            val webUri = Uri.parse("https://www.google.com/search?q=" + URLEncoder.encode("$query слушать", "UTF-8"))
+            val browserIntent = Intent(Intent.ACTION_VIEW, webUri).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(browserIntent)
+        } catch (_: Exception) {}
     }
 }
