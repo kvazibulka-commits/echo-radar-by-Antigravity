@@ -102,7 +102,8 @@ data class VinylTrack(
     val colorHex: Long,
     val isCapsule: Boolean = false,
     val isGhost: Boolean = false,
-    val isSelf: Boolean = false
+    val isSelf: Boolean = false,
+    val coverUrl: String? = null
 )
 
 fun PlayingTrack.toVinylTrack(): VinylTrack = VinylTrack(
@@ -134,7 +135,8 @@ fun NearbyEchoSignal.toVinylTrack(): VinylTrack = VinylTrack(
     angleDeg = angleDeg,
     ringFactor = ringFactor,
     colorHex = colorHex,
-    isGhost = isGhost
+    isGhost = isGhost,
+    coverUrl = coverUrl
 )
 
 fun EchoCapsule.toVinylTrack(): VinylTrack = VinylTrack(
@@ -189,7 +191,8 @@ fun VinylCityMainScreen() {
 
     LaunchedEffect(allVinyls, currentPlayingTrack) {
         if (selectedVinyl == null) {
-            selectedVinyl = if (allVinyls.isNotEmpty()) allVinyls.first() else currentPlayingTrack.toVinylTrack()
+            val pcVinyl = allVinyls.find { it.id == "pc_studio_node" || it.sourceApp.contains("ПК") || it.sourceApp.contains("Windows") }
+            selectedVinyl = pcVinyl ?: (if (allVinyls.isNotEmpty()) allVinyls.first() else currentPlayingTrack.toVinylTrack())
         } else if (selectedVinyl?.isSelf == true) {
             selectedVinyl = currentPlayingTrack.toVinylTrack()
         }
@@ -200,10 +203,14 @@ fun VinylCityMainScreen() {
     // Active Album Artwork and Audio Preview URL loaded via iTunes Search API
     var trackMediaInfo by remember { mutableStateOf(TrackMediaInfo()) }
 
-    LaunchedEffect(activeTrack.artist, activeTrack.title) {
-        trackMediaInfo = TrackMediaInfo()
+    LaunchedEffect(activeTrack.artist, activeTrack.title, activeTrack.coverUrl) {
+        trackMediaInfo = if (!activeTrack.coverUrl.isNullOrBlank()) {
+            TrackMediaInfo(coverUrl = activeTrack.coverUrl)
+        } else {
+            TrackMediaInfo()
+        }
         if (!activeTrack.artist.startsWith("Ожидание") && activeTrack.artist.isNotBlank()) {
-            val info = AlbumArtResolver.getMediaInfo(activeTrack.artist, activeTrack.title)
+            val info = AlbumArtResolver.getMediaInfo(activeTrack.artist, activeTrack.title, activeTrack.coverUrl)
             trackMediaInfo = info
         }
     }
@@ -574,9 +581,10 @@ fun VinylCityMainScreen() {
                             .background(Color(0xFF182030)),
                         contentAlignment = Alignment.Center
                     ) {
-                        if (!trackMediaInfo.coverUrl.isNullOrBlank()) {
+                        val effectiveCover = activeTrack.coverUrl ?: trackMediaInfo.coverUrl
+                        if (!effectiveCover.isNullOrBlank()) {
                             AsyncImage(
-                                model = trackMediaInfo.coverUrl,
+                                model = effectiveCover,
                                 contentDescription = "Full Album Cover",
                                 contentScale = ContentScale.Crop,
                                 modifier = Modifier.fillMaxSize()
@@ -1119,17 +1127,27 @@ fun VinylCityMapCanvas(
                 )
 
                 val isFocused = selectedVinyl?.id == vinyl.id
-                val vinylBaseColor = Color(vinyl.colorHex)
+                val isPc = vinyl.id == "pc_studio_node" || vinyl.sourceApp.contains("ПК") || vinyl.sourceApp.contains("Windows")
+                val vinylBaseColor = if (isPc) Color(0xFF00F0FF) else Color(vinyl.colorHex)
 
-                // Neon puddle on asphalt
+                // Neon puddle on asphalt (enhanced for PC)
                 drawCircle(
-                    color = vinylBaseColor.copy(alpha = if (isFocused) 0.35f else 0.15f),
-                    radius = (if (isFocused) 26.dp else 18.dp).toPx() * neonPulse,
+                    color = vinylBaseColor.copy(alpha = if (isFocused) 0.45f else if (isPc) 0.35f else 0.15f),
+                    radius = (if (isFocused) 26.dp else if (isPc) 22.dp else 18.dp).toPx() * neonPulse,
                     center = pos
                 )
 
+                if (isPc) {
+                    drawCircle(
+                        color = Color(0xFF00F0FF).copy(alpha = 0.55f),
+                        radius = 20.dp.toPx() * neonPulse,
+                        center = pos,
+                        style = Stroke(width = 1.2.dp.toPx())
+                    )
+                }
+
                 // Mini Vinyl Disc
-                val discRadius = (if (isFocused) 16.dp else 12.dp).toPx()
+                val discRadius = (if (isFocused) 16.dp else if (isPc) 14.dp else 12.dp).toPx()
                 drawCircle(color = Color(0xFF141720), radius = discRadius, center = pos)
                 drawCircle(
                     color = if (isFocused) vinylBaseColor else Color(0xFF2D3748),
@@ -1176,6 +1194,12 @@ fun VinylCityMapCanvas(
 
 @Composable
 fun MiniVinylCalloutPill(vinyl: VinylTrack, modifier: Modifier = Modifier) {
+    var coverUrl by remember(vinyl.artist, vinyl.title, vinyl.coverUrl) { mutableStateOf(vinyl.coverUrl) }
+    LaunchedEffect(vinyl.artist, vinyl.title, vinyl.coverUrl) {
+        if (coverUrl.isNullOrBlank()) {
+            coverUrl = AlbumArtResolver.getCoverUrl(vinyl.artist, vinyl.title)
+        }
+    }
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = Color(0xFF101624).copy(alpha = 0.95f),
@@ -1184,24 +1208,37 @@ fun MiniVinylCalloutPill(vinyl: VinylTrack, modifier: Modifier = Modifier) {
         modifier = modifier
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(text = "♫", color = Color(vinyl.colorHex), fontSize = 12.sp)
-            Text(
-                text = "${vinyl.artist} — ${vinyl.title}",
-                color = Color.White,
-                fontSize = 11.5.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = "• ${vinyl.distanceLabel}",
-                color = Color(0xFF94A3B8),
-                fontSize = 10.5.sp
-            )
+            if (!coverUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = coverUrl,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(26.dp)
+                        .clip(RoundedCornerShape(6.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Text(text = "♫", color = Color(vinyl.colorHex), fontSize = 13.sp)
+            }
+            Column {
+                Text(
+                    text = "${vinyl.artist} — ${vinyl.title}",
+                    color = Color.White,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${if (vinyl.id == "pc_studio_node" || vinyl.sourceApp.contains("ПК")) "💻 ПК в эфире" else vinyl.sourceApp} • ${vinyl.distanceLabel}",
+                    color = Color(0xFF94A3B8),
+                    fontSize = 9.5.sp
+                )
+            }
         }
     }
 }
@@ -1301,9 +1338,10 @@ fun TurntableDeckView(
                         .background(Color(activeTrack.colorHex)),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (!mediaInfo.coverUrl.isNullOrBlank()) {
+                    val effectiveCover = activeTrack.coverUrl ?: mediaInfo.coverUrl
+                    if (!effectiveCover.isNullOrBlank()) {
                         AsyncImage(
-                            model = mediaInfo.coverUrl,
+                            model = effectiveCover,
                             contentDescription = "Album Cover (Tap to Zoom)",
                             contentScale = ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()

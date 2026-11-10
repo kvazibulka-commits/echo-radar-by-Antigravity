@@ -36,7 +36,8 @@ data class NearbyEchoSignal(
     val angleDeg: Float,
     val ringFactor: Float,
     val colorHex: Long = 0xFF38BDF8L,
-    val isGhost: Boolean = false
+    val isGhost: Boolean = false,
+    val coverUrl: String? = null
 )
 
 data class EchoCapsule(
@@ -286,6 +287,11 @@ object EchoStateRepository {
                     }
                     val resDays = s.optInt("resonanceDays", 0)
 
+                    val rawCover = s.optString("coverUrl", "")
+                    val parsedCover = if (rawCover.isNotBlank()) {
+                        if (rawCover.startsWith("http://") || rawCover.startsWith("https://")) rawCover else buildUrl(rawCover)
+                    } else null
+
                     signals.add(
                         NearbyEchoSignal(
                             id = id,
@@ -302,7 +308,8 @@ object EchoStateRepository {
                             angleDeg = s.optDouble("angleDegrees", 45.0).toFloat(),
                             ringFactor = s.optDouble("distanceRatio", 0.5).toFloat(),
                             colorHex = s.optLong("colorHex", 0xFF38BDF8L),
-                            isGhost = s.optBoolean("isGhost", false)
+                            isGhost = s.optBoolean("isGhost", false),
+                            coverUrl = parsedCover
                         )
                     )
                 }

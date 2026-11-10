@@ -13,6 +13,7 @@
 - Автоматический UDP-маяк автопоиска (порт 8888)
 """
 
+import base64
 import concurrent.futures
 import hashlib
 import json
@@ -125,6 +126,7 @@ REACTIONS_LOCK = threading.Lock()
 METADATA_CACHE = LRUCache(maxsize=500)
 AI_PERSONA_CACHE = LRUCache(maxsize=500)
 RECENT_REACTIONS = []
+DEVICE_COVERS = {}
 _PERSONA_EXECUTOR = None
 
 ZONE_COORDINATES = {
@@ -726,6 +728,8 @@ def build_state_payload(for_device_id: str = None):
                 "ageMinutes": age_min,
                 "reactions": reactions
             }
+            if dev_id in DEVICE_COVERS:
+                sig["coverUrl"] = f"/api/cover/{dev_id}"
             signals.append(sig)
             zone_buckets.setdefault(sig["zoneName"], []).append(sig)
 
@@ -944,7 +948,21 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
-        if path == "/api/state":
+        if path.startswith("/api/cover/"):
+            target_id = path[len("/api/cover/"):]
+            if target_id in DEVICE_COVERS:
+                mime_type, cover_raw = DEVICE_COVERS[target_id]
+                self.send_response(200)
+                self.send_header("Content-Type", mime_type)
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Cache-Control", "public, max-age=3600")
+                self.send_header("Content-Length", str(len(cover_raw)))
+                self.end_headers()
+                self.wfile.write(cover_raw)
+            else:
+                self.send_response(404)
+                self.end_headers()
+        elif path == "/api/state":
             query = urllib.parse.parse_qs(parsed.query)
             dev_id = query.get("deviceId", [None])[0] or self.headers.get("X-Device-Id")
             self._send_json(build_state_payload(for_device_id=dev_id))
@@ -980,6 +998,15 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
             title = str(data.get("title") or "Без названия").strip()
             source_name = str(data.get("sourceName") or "Android ЭХО")
             zone_name = str(data.get("zoneName") or "Вечерняя улица")
+
+            cover_b64 = data.get("coverBase64")
+            if cover_b64:
+                try:
+                    c_bytes = base64.b64decode(cover_b64)
+                    c_mime = "image/png" if c_bytes.startswith(b"\x89PNG") else "image/jpeg"
+                    DEVICE_COVERS[dev_id] = (c_mime, c_bytes)
+                except Exception as e:
+                    logger.debug("coverBase64 decode error: %s", e)
 
             incoming_recent = data.get("recentTracks", [])
             future = _PERSONA_EXECUTOR.submit(generate_curated_persona, artist, title, dev_id, incoming_recent)
