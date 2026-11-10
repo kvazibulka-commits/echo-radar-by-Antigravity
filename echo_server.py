@@ -679,10 +679,22 @@ def build_state_payload(for_device_id: str = None):
             age_min = max(0, int((now_sec - updated_at) / 60.0))
             is_ghost = age_min > 5
 
+            compat_num = int(row["compatibility_percent"] or 88)
+            encounters_num = int(row["encounters_count"] or 1)
+            if compat_num >= 85:
+                res_story = "Редкое созвучие: вы оба растворяетесь в одном звуковом спектре."
+            elif compat_num >= 70:
+                res_story = "Тёплый вечерний резонанс: ваши звуковые траектории пересеклись в этой точке города."
+            else:
+                res_story = "Случайная встреча контрастов в ночном эфире."
+            if encounters_num > 1:
+                res_story += f" Ваши волны встречаются уже {encounters_num}-й раз за неделю."
+
             sig = {
                 "id": dev_id,
                 "artist": row["artist"],
                 "title": row["title"],
+                "resonanceStory": res_story,
                 "sourceName": row["source_name"] or "ЭХО",
                 "distanceMeters": int(row["distance_meters"] or 50),
                 "angleDegrees": float(row["angle_degrees"] or 45.0),

@@ -2,7 +2,9 @@ package ru.echo.radar
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.provider.MediaStore
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -35,6 +37,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.net.URLEncoder
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -63,13 +67,51 @@ fun isNotificationListenerEnabled(context: Context): Boolean {
     return flat != null && flat.contains(packageName)
 }
 
+/**
+ * Мгновенное открытие и прослушивание трека в установленном плеере (Яндекс Музыка / Spotify / YouTube Music).
+ * Воплощает цель №1 Конституции ЭХО: «Помочь открыть новую музыку в один клик».
+ */
+fun openTrackInMusicPlayer(context: Context, artist: String, title: String) {
+    val query = "$artist $title".trim()
+    if (query.isBlank()) return
+
+    val encoded = URLEncoder.encode(query, "UTF-8")
+    // 1. Попытка открыть напрямую в Яндекс Музыке
+    val yandexUri = Uri.parse("https://music.yandex.ru/search?text=$encoded")
+    val yandexIntent = Intent(Intent.ACTION_VIEW, yandexUri).apply {
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(yandexIntent)
+        return
+    } catch (_: Exception) {}
+
+    // 2. Фоллбэк: универсальный музыкальный интент Android
+    val mediaIntent = Intent(MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH).apply {
+        putExtra(MediaStore.EXTRA_MEDIA_FOCUS, "vnd.android.cursor.item/*")
+        putExtra("query", query)
+        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    try {
+        context.startActivity(mediaIntent)
+        return
+    } catch (_: Exception) {}
+
+    // 3. Веб-поиск для быстрого запуска
+    val webUri = Uri.parse("https://www.google.com/search?q=" + URLEncoder.encode("$query слушать", "UTF-8"))
+    context.startActivity(Intent(Intent.ACTION_VIEW, webUri).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+}
+
 @Composable
 fun EchoRadarApp(hasPermission: Boolean) {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val coroutineScope = rememberCoroutineScope()
 
+    val prefs = remember { context.getSharedPreferences("echo_prefs", Context.MODE_PRIVATE) }
     var hasNotificationPermission by remember(hasPermission) { mutableStateOf(hasPermission) }
     var showPermissionGuideDialog by remember { mutableStateOf(false) }
+    var showManifestDialog by remember { mutableStateOf(!prefs.getBoolean("has_seen_manifest", false)) }
 
     val currentTrack by EchoStateRepository.currentTrack.collectAsState()
     val presenceActive by EchoStateRepository.presenceActive.collectAsState()
@@ -87,6 +129,10 @@ fun EchoRadarApp(hasPermission: Boolean) {
     var showManualDialog by remember { mutableStateOf(false) }
     var showDropCapsuleDialog by remember { mutableStateOf(false) }
     var activeTab by remember { mutableStateOf(0) } // 0 = Волны, 1 = Тайники
+
+    // Анимация светового импульса при отправке отклика
+    val impulseProgress = remember { Animatable(0f) }
+    var impulseTargetOffset by remember { mutableStateOf<Offset?>(null) }
 
     var serverHostInput by remember(serverHost) { mutableStateOf(serverHost) }
     var serverTokenInput by remember(echoToken) { mutableStateOf(echoToken) }
@@ -137,7 +183,7 @@ fun EchoRadarApp(hasPermission: Boolean) {
             .fillMaxSize()
             .background(Color(0xFF030712))
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp, vertical = 20.dp),
+            .padding(horizontal = 16.dp, vertical = 18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         // ── ВСПЛЫВАЮЩИЙ БАННЕР ВХОДЯЩЕГО ОТКЛИКА ──
@@ -173,7 +219,7 @@ fun EchoRadarApp(hasPermission: Boolean) {
 
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "✨ ВАМ ПРИШЕЛ ОТКЛИК!",
+                                text = "✨ ВАМ ПРИШЕЛ ИМПУЛЬС!",
                                 color = Color(0xFF38BDF8),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
@@ -203,7 +249,7 @@ fun EchoRadarApp(hasPermission: Boolean) {
             }
         }
 
-        // ── ШАПКА ПРИЛОЖЕНИЯ ──
+        // ── ШАПКА ПРИЛОЖЕНИЯ (ЧИСТЫЙ ЛАКОНИЧНЫЙ ДИЗАЙН) ──
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -218,66 +264,83 @@ fun EchoRadarApp(hasPermission: Boolean) {
                     letterSpacing = 4.sp
                 )
                 Text(
-                    text = "Сонар музыкального присутствия",
+                    text = "Акустический сонар вечернего города",
                     color = Color(0xFF64748B),
                     fontSize = 11.sp
                 )
             }
 
-            // Переключатель видимости в эфире
-            Surface(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(20.dp))
-                    .clickable { EchoStateRepository.togglePresence() },
-                color = if (presenceActive) Color(0xFF0C243B) else Color(0xFF1E293B),
-                border = BorderStroke(1.dp, if (presenceActive) Color(0xFF0284C7) else Color(0xFF475569))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                // Кнопка манифеста философии
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { showManifestDialog = true },
+                    color = Color(0xFF1E1B4B).copy(alpha = 0.6f),
+                    border = BorderStroke(1.dp, Color(0xFF4338CA))
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .background(if (presenceActive) Color(0xFF38BDF8) else Color(0xFF64748B))
-                    )
                     Text(
-                        text = if (presenceActive) "В эфире" else "Тишина",
-                        color = if (presenceActive) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                        text = "✦ Манифест",
+                        color = Color(0xFF818CF8),
                         fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                     )
+                }
+
+                // Переключатель видимости в эфире
+                Surface(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { EchoStateRepository.togglePresence() },
+                    color = if (presenceActive) Color(0xFF0C243B) else Color(0xFF1E293B),
+                    border = BorderStroke(1.dp, if (presenceActive) Color(0xFF0284C7) else Color(0xFF475569))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .clip(CircleShape)
+                                .background(if (presenceActive) Color(0xFF38BDF8) else Color(0xFF64748B))
+                        )
+                        Text(
+                            text = if (presenceActive) "В эфире" else "Тишина",
+                            color = if (presenceActive) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                // Иконка настроек сервера
+                IconButton(
+                    onClick = { showServerDialog = true },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Text("⚙", color = Color(0xFF64748B), fontSize = 16.sp)
                 }
             }
         }
 
-        // ── СТАТУС ПОДКЛЮЧЕНИЯ И КНОПКА НАСТРОЙКИ СЕРВЕРА ──
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            val statusColor = when {
-                connectionStatus.startsWith("●") -> Color(0xFF22C55E)
-                connectionStatus.startsWith("✗") -> Color(0xFFEF4444)
-                else -> Color(0xFF94A3B8)
-            }
-            Text(
-                text = connectionStatus,
-                color = statusColor,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium
-            )
-
-            TextButton(
-                onClick = { showServerDialog = true },
-                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-            ) {
-                Text("⚙ Настроить сервер", color = Color(0xFF818CF8), fontSize = 11.sp)
-            }
+        // Статус связи
+        val statusColor = when {
+            connectionStatus.startsWith("●") -> Color(0xFF22C55E)
+            connectionStatus.startsWith("✗") -> Color(0xFFEF4444)
+            else -> Color(0xFF94A3B8)
         }
+        Text(
+            text = connectionStatus,
+            color = statusColor,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium
+        )
 
         // ── КАРТОЧКА ТЕКУЩЕГО ТРЕКА В НАУШНИКАХ ──
         Column(
@@ -310,7 +373,7 @@ fun EchoRadarApp(hasPermission: Boolean) {
                     ) {
                         EqualizerBars(isActive = presenceActive && currentTrack.artist != "Ожидание музыки...")
                         Text(
-                            text = "В НАУШНИКАХ · ${currentTrack.sourceApp.uppercase()}",
+                            text = "В ВАШИХ НАУШНИКАХ · ${currentTrack.sourceApp.uppercase()}",
                             color = Color(0xFF818CF8),
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
@@ -335,7 +398,7 @@ fun EchoRadarApp(hasPermission: Boolean) {
                 }
             }
 
-            // Подсказка, если доступ к чтению музыки еще не выдан
+            // Подсказка, если чтение музыки еще не включено
             if (!hasNotificationPermission) {
                 Surface(
                     modifier = Modifier
@@ -415,7 +478,7 @@ fun EchoRadarApp(hasPermission: Boolean) {
             }
         }
 
-        // ── ИНТЕРАКТИВНЫЙ РАДАР СОНАРА ──
+        // ── ИНТЕРАКТИВНЫЙ РАДАР СОНАРА СО СТРУНАМИ РЕЗОНАНСА ──
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -552,6 +615,48 @@ fun EchoRadarApp(hasPermission: Boolean) {
                         )
                     }
 
+                    // ── СВЕТОВЫЕ СТРУНЫ РЕЗОНАНСА (ВИЗУАЛИЗАЦИЯ ДУХОВНОЙ БЛИЗОСТИ) ──
+                    nearbySignalsFlow.forEach { sig ->
+                        val rad = Math.toRadians(sig.angleDeg.toDouble())
+                        val r = maxR * sig.ringFactor.coerceIn(0.2f, 0.95f)
+                        val bx = center.x + (r.toDouble() * cos(rad)).toFloat()
+                        val by = center.y + (r.toDouble() * sin(rad)).toFloat()
+                        val bOffset = Offset(bx, by)
+                        val isSelected = sig.id == selectedSignal?.id
+
+                        if (sig.compatibility >= 70 || isSelected) {
+                            val alphaPulse = (0.22f + 0.18f * sin(wavePhase * 2f + sig.angleDeg)).coerceIn(0.08f, 0.55f)
+                            drawLine(
+                                brush = Brush.linearGradient(
+                                    colors = listOf(
+                                        Color(0xFF38BDF8).copy(alpha = if (isSelected) 0.6f else alphaPulse),
+                                        Color(sig.colorHex.toInt()).copy(alpha = if (isSelected) 0.5f else alphaPulse * 0.7f)
+                                    ),
+                                    start = center,
+                                    end = bOffset
+                                ),
+                                start = center,
+                                end = bOffset,
+                                strokeWidth = if (isSelected) 2.0f else 1.0f
+                            )
+                        }
+                    }
+
+                    // Анимация бегущей световой волны отклика
+                    impulseTargetOffset?.let { target ->
+                        val p = impulseProgress.value
+                        if (p > 0f && p < 1f) {
+                            val currX = center.x + (target.x - center.x) * p
+                            val currY = center.y + (target.y - center.y) * p
+                            drawCircle(
+                                color = Color(0xFF38BDF8).copy(alpha = 1f - p),
+                                radius = 8.dp.toPx() + (p * 14.dp.toPx()),
+                                center = Offset(currX, currY),
+                                style = Stroke(width = 2.5f)
+                            )
+                        }
+                    }
+
                     // 1. Отрисовка музыкальных тайников (капсул) — золотистые маркеры
                     capsulesFlow.forEach { cap ->
                         val rad = Math.toRadians(cap.angleDeg.toDouble())
@@ -626,7 +731,7 @@ fun EchoRadarApp(hasPermission: Boolean) {
             }
         }
 
-        // ── КАРТОЧКА ВЫБРАННОГО ТАЙНИКА (КАПСУЛЫ) ──
+        // ── КАРТОЧКА ВЫБРАННОГО ТАЙНИКА (КАПСУЛЫ) С КНОПКОЙ ПРОСЛУШИВАНИЯ ──
         selectedCapsule?.let { cap ->
             Column(
                 modifier = Modifier
@@ -688,10 +793,22 @@ fun EchoRadarApp(hasPermission: Boolean) {
                         fontWeight = FontWeight.SemiBold
                     )
                 }
+
+                // Кнопка быстрого прослушивания трека тайника в плеере
+                Button(
+                    onClick = {
+                        openTrackInMusicPlayer(context, cap.artist, cap.title)
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706))
+                ) {
+                    Text("▶ Слушать трек в Яндекс Музыке / Плеере", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
             }
         }
 
-        // ── КАРТОЧКА ВЫБРАННОГО СЛУШАТЕЛЯ ──
+        // ── КАРТОЧКА ВЫБРАННОГО СЛУШАТЕЛЯ С КНОПКОЙ «СЛУШАТЬ В ПЛЕЕРЕ» И ИСТОРИЕЙ РЕЗОНАНСА ──
         selectedSignal?.let { sig ->
             Column(
                 modifier = Modifier
@@ -731,7 +848,7 @@ fun EchoRadarApp(hasPermission: Boolean) {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "✦ ${sig.compatibility}% совпадение",
+                                text = "✦ ${sig.compatibility}% резонанс",
                                 color = Color(0xFF38BDF8),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold
@@ -746,49 +863,75 @@ fun EchoRadarApp(hasPermission: Boolean) {
                     }
                 }
 
-                Row(
+                // Карточка трека + КНОПКА СЛУШАТЬ В ПЛЕЕРЕ
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(14.dp))
                         .background(Color(0xFF131D31))
-                        .padding(10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "♫ ${sig.artist} — ${sig.title}",
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        if (sig.isGhost) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "Призрачный след (звучал ранее)",
-                                color = Color(0xFFA78BFA),
-                                fontSize = 10.sp
+                                text = "♫ ${sig.artist} — ${sig.title}",
+                                color = Color.White,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
+                            if (sig.isGhost) {
+                                Text(
+                                    text = "Призрачный след (звучал ранее)",
+                                    color = Color(0xFFA78BFA),
+                                    fontSize = 10.sp
+                                )
+                            }
                         }
+                        Text(
+                            text = sig.distanceLabel,
+                            color = Color(0xFF38BDF8),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
-                    Text(
-                        text = sig.distanceLabel,
-                        color = Color(0xFF94A3B8),
-                        fontSize = 11.sp
-                    )
+
+                    // Кнопка «Надеть наушники незнакомца» (Слушать в Яндекс Музыке / Spotify)
+                    Button(
+                        onClick = {
+                            openTrackInMusicPlayer(context, sig.artist, sig.title)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE11D48)),
+                        contentPadding = PaddingValues(vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = "▶ Слушать этот трек в Яндекс Музыке",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
+                        )
+                    }
                 }
 
-                if (sig.resonanceDays != null) {
+                // Поэтическая расшифровка резонанса вместо сухой цифры
+                if (sig.resonanceStory.isNotBlank()) {
                     Text(
-                        text = "✦ ${sig.resonanceDays}: совпала ваша музыкальная фаза жизни",
+                        text = "✦ ${sig.resonanceStory}",
                         color = Color(0xFFC7D2FE),
-                        fontSize = 11.sp,
+                        fontSize = 12.sp,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(10.dp))
                             .background(Color(0xFF1E1B4B).copy(alpha = 0.5f))
-                            .padding(8.dp)
+                            .padding(10.dp)
                     )
                 }
 
@@ -804,7 +947,7 @@ fun EchoRadarApp(hasPermission: Boolean) {
                 // Кнопки отправки невербальных откликов
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        text = "ОТПРАВИТЬ СИМВОЛ РЕЗОНАНСА",
+                        text = "ОТПРАВИТЬ СИМВОЛ РЕЗОНАНСА В НОЧНОЙ ГОРОД",
                         color = Color(0xFF64748B),
                         fontSize = 10.sp,
                         fontWeight = FontWeight.Bold,
@@ -828,6 +971,15 @@ fun EchoRadarApp(hasPermission: Boolean) {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                         EchoStateRepository.sendReaction(sig.id, symbol) { ok ->
                                             sentSymbolMessage = if (ok) "Импульс $symbol отправлен в эфир" else "Ошибка отправки"
+                                        }
+
+                                        // Запуск анимации импульса по сонару
+                                        coroutineScope.launch {
+                                            impulseProgress.snapTo(0f)
+                                            impulseProgress.animateTo(
+                                                targetValue = 1f,
+                                                animationSpec = tween(700, easing = FastOutSlowInEasing)
+                                            )
                                         }
                                     },
                                 color = Color(0xFF131D31),
@@ -883,7 +1035,7 @@ fun EchoRadarApp(hasPermission: Boolean) {
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "Коснитесь любой точки на сонаре для подробностей и отклика",
+                            text = "Коснитесь любой точки на сонаре для прослушивания и отклика",
                             color = Color(0xFF64748B),
                             fontSize = 10.sp
                         )
@@ -1052,6 +1204,103 @@ fun EchoRadarApp(hasPermission: Boolean) {
                 )
             }
         }
+    }
+
+    // ── МОДАЛЬНЫЙ ЭКРАН: МАНИФЕСТ И ФИЛОСОФИЯ ЭХО (ДЛЯ НОВЫХ ПОЛЬЗОВАТЕЛЕЙ) ──
+    if (showManifestDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showManifestDialog = false
+                prefs.edit().putBoolean("has_seen_manifest", true).apply()
+            },
+            containerColor = Color(0xFF090E1A),
+            shape = RoundedCornerShape(24.dp),
+            title = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("✦ МАНИФЕСТ ЭХО", color = Color(0xFF818CF8), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+                    Text("Какая музыка живет вокруг вас?", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color(0xFF131D31),
+                        border = BorderStroke(1.dp, Color(0xFF1E293B))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "1. Город в наушниках",
+                                color = Color(0xFF38BDF8),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Вы видите не профили людей. Вы видите музыку, которая звучит в ушах тех, кто идет по этой же улице в радиусе 200 метров.",
+                                color = Color(0xFFCBD5E1),
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color(0xFF131D31),
+                        border = BorderStroke(1.dp, Color(0xFF1E293B))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "2. Это НЕ соцсеть",
+                                color = Color(0xFFA78BFA),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Здесь нет лайков, счетчиков, фотографий и чатов. Только чистая музыка, тихие световые импульсы и эфемерные следы, исчезающие в тишине.",
+                                color = Color(0xFFCBD5E1),
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = Color(0xFF131D31),
+                        border = BorderStroke(1.dp, Color(0xFF1E293B))
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(
+                                text = "3. Надевайте чужие наушники",
+                                color = Color(0xFFFBBF24),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Нажмите на любой маяк на сонаре и слушайте найденный трек в Яндекс Музыке в 1 клик. Оставляйте тайники с мыслями в любимых местах города.",
+                                color = Color(0xFFCBD5E1),
+                                fontSize = 12.sp,
+                                lineHeight = 16.sp
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showManifestDialog = false
+                        prefs.edit().putBoolean("has_seen_manifest", true).apply()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4F46E5)),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Войти в акустический эфир", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
     }
 
     // ── ДИАЛОГ-ИНСТРУКЦИЯ ПО ВКЛЮЧЕНИЮ ЧТЕНИЯ МУЗЫКИ ──
