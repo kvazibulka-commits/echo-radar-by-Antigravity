@@ -51,7 +51,7 @@ object AlbumArtResolver {
                     }
                 }
             }
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
         null
     }
 }
