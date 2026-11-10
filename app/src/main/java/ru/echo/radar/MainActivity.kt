@@ -134,8 +134,8 @@ fun EchoRadarApp(hasPermission: Boolean) {
     val impulseProgress = remember { Animatable(0f) }
     var impulseTargetOffset by remember { mutableStateOf<Offset?>(null) }
 
-    var serverHostInput by remember(serverHost) { mutableStateOf(serverHost) }
-    var serverTokenInput by remember(echoToken) { mutableStateOf(echoToken) }
+    var serverHostInput by remember(serverHost) { mutableStateOf(if (serverHost.isBlank()) "http://192.168.0.214:8080" else serverHost) }
+    var serverTokenInput by remember(echoToken) { mutableStateOf(if (echoToken.isBlank()) "1c13ee8697755fdc4518013ea2fd6996" else echoToken) }
 
     val infiniteTransition = rememberInfiniteTransition(label = "radar_anim")
     val radarSweepAngle by infiniteTransition.animateFloat(
@@ -249,7 +249,7 @@ fun EchoRadarApp(hasPermission: Boolean) {
             }
         }
 
-        // ── ШАПКА ПРИЛОЖЕНИЯ (ЧИСТЫЙ ЛАКОНИЧНЫЙ ДИЗАЙН) ──
+        // ── ШАПКА ПРИЛОЖЕНИЯ ──
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -291,56 +291,86 @@ fun EchoRadarApp(hasPermission: Boolean) {
                     )
                 }
 
-                // Переключатель видимости в эфире
+                // Иконка настроек сервера — всегда видна и легко нажимается
                 Surface(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(16.dp))
-                        .clickable { EchoStateRepository.togglePresence() },
-                    color = if (presenceActive) Color(0xFF0C243B) else Color(0xFF1E293B),
-                    border = BorderStroke(1.dp, if (presenceActive) Color(0xFF0284C7) else Color(0xFF475569))
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable { showServerDialog = true },
+                    color = Color(0xFF1E293B),
+                    border = BorderStroke(1.dp, Color(0xFF334155))
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(5.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(6.dp)
-                                .clip(CircleShape)
-                                .background(if (presenceActive) Color(0xFF38BDF8) else Color(0xFF64748B))
-                        )
-                        Text(
-                            text = if (presenceActive) "В эфире" else "Тишина",
-                            color = if (presenceActive) Color(0xFF38BDF8) else Color(0xFF94A3B8),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("⚙", color = Color(0xFFCBD5E1), fontSize = 17.sp)
                     }
-                }
-
-                // Иконка настроек сервера
-                IconButton(
-                    onClick = { showServerDialog = true },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Text("⚙", color = Color(0xFF64748B), fontSize = 16.sp)
                 }
             }
         }
 
-        // Статус связи
-        val statusColor = when {
-            connectionStatus.startsWith("●") -> Color(0xFF22C55E)
-            connectionStatus.startsWith("✗") -> Color(0xFFEF4444)
-            else -> Color(0xFF94A3B8)
+        // ── СТРОКА СТАТУСА СВЯЗИ И ПЕРЕКЛЮЧАТЕЛЬ ЭФИРА ──
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val isConnected = connectionStatus.startsWith("●")
+            val isError = connectionStatus.startsWith("✗") || connectionStatus == "Не подключено"
+
+            Surface(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { showServerDialog = true },
+                color = if (isConnected) Color(0xFF052E16) else if (isError) Color(0xFF450A0A) else Color(0xFF1E293B),
+                border = BorderStroke(1.dp, if (isConnected) Color(0xFF15803D) else if (isError) Color(0xFFEF4444) else Color(0xFF475569))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .clip(CircleShape)
+                            .background(if (isConnected) Color(0xFF22C55E) else if (isError) Color(0xFFEF4444) else Color(0xFF94A3B8))
+                    )
+                    Text(
+                        text = if (isConnected) "● Эфир активен" else "⚠️ Не подключено · Настроить сервер ⚙",
+                        color = if (isConnected) Color(0xFF86EFAC) else if (isError) Color(0xFFFCA5A5) else Color(0xFFCBD5E1),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+
+            // Переключатель видимости в эфире
+            Surface(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .clickable { EchoStateRepository.togglePresence() },
+                color = if (presenceActive) Color(0xFF0C243B) else Color(0xFF1E293B),
+                border = BorderStroke(1.dp, if (presenceActive) Color(0xFF0284C7) else Color(0xFF475569))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .clip(CircleShape)
+                            .background(if (presenceActive) Color(0xFF38BDF8) else Color(0xFF64748B))
+                    )
+                    Text(
+                        text = if (presenceActive) "В эфире" else "Тишина",
+                        color = if (presenceActive) Color(0xFF38BDF8) else Color(0xFF94A3B8),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
         }
-        Text(
-            text = connectionStatus,
-            color = statusColor,
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Medium
-        )
 
         // ── КАРТОЧКА ТЕКУЩЕГО ТРЕКА В НАУШНИКАХ ──
         Column(
@@ -1490,6 +1520,18 @@ fun EchoRadarApp(hasPermission: Boolean) {
                         color = Color(0xFF64748B),
                         fontSize = 11.sp
                     )
+                    OutlinedButton(
+                        onClick = {
+                            serverHostInput = "http://192.168.0.214:8080"
+                            serverTokenInput = "1c13ee8697755fdc4518013ea2fd6996"
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF38BDF8)),
+                        border = BorderStroke(1.dp, Color(0xFF0284C7))
+                    ) {
+                        Text("Вставить локальный IP (192.168.0.214:8080)", fontSize = 11.sp)
+                    }
                 }
             },
             confirmButton = {

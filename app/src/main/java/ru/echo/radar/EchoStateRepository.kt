@@ -76,10 +76,10 @@ object EchoStateRepository {
         .build()
 
     // ── Адрес сервера и токен доступа ──
-    private val _serverHost = MutableStateFlow("")
+    private val _serverHost = MutableStateFlow("http://192.168.0.214:8080")
     val serverHost: StateFlow<String> = _serverHost.asStateFlow()
 
-    private val _echoToken = MutableStateFlow("")
+    private val _echoToken = MutableStateFlow("1c13ee8697755fdc4518013ea2fd6996")
     val echoToken: StateFlow<String> = _echoToken.asStateFlow()
 
     private var _appContext: Context? = null
@@ -137,13 +137,11 @@ object EchoStateRepository {
             prefs.edit().putString("device_id", newId).apply()
             newId
         }
-        val savedHost = prefs.getString("server_host", "") ?: ""
-        val savedToken = prefs.getString("echo_token", "") ?: ""
-        if (savedHost.isNotBlank()) {
-            _serverHost.value = savedHost
-            _echoToken.value = savedToken
-            startPolling()
-        }
+        val savedHost = prefs.getString("server_host", "http://192.168.0.214:8080") ?: "http://192.168.0.214:8080"
+        val savedToken = prefs.getString("echo_token", "1c13ee8697755fdc4518013ea2fd6996") ?: "1c13ee8697755fdc4518013ea2fd6996"
+        _serverHost.value = savedHost
+        _echoToken.value = savedToken
+        startPolling()
     }
 
     fun setServerHost(host: String, token: String = "") {

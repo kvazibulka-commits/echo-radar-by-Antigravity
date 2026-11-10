@@ -260,6 +260,43 @@ def get_local_ip():
         return "127.0.0.1"
 
 
+def seed_default_devices(cur, now):
+    s1_lat, s1_lon = get_zone_jittered_coords("Вечерняя улица", "seed1")
+    s2_lat, s2_lon = get_zone_jittered_coords("Сретенка · Камерные бары", "seed2")
+    s3_lat, s3_lon = get_zone_jittered_coords("Парк Горького · Набережная", "seed3")
+
+    seed_signals = [
+        (
+            "sig_sirotkin_01", "Sirotkin", "Август", "Яндекс Музыка",
+            "Архивариус забытых кассет",
+            "Слушает теплые гитарные реверберации, превращая суету улицы в медленный ночной фильм.",
+            "Теплый винил", 0xFF38BDF8, 6, "Вечерняя улица", 38, 35.0, 0.32, 94, 3, 4,
+            json.dumps({"✦": 4, "🌙": 2}, ensure_ascii=False), s1_lat, s1_lon, now
+        ),
+        (
+            "sig_molchat_02", "Молчат Дома", "Судно", "VK Музыка",
+            "Пилигрим неоновых панелек",
+            "Вслушивается в упругий бас пустых переулков, удерживая пульс вечернего города.",
+            "Холодный пост-панк", 0xFFA855F7, 8, "Сретенка · Камерные бары", 75, 145.0, 0.52, 88, 2, 3,
+            json.dumps({"🔥": 3, "🌊": 1}, ensure_ascii=False), s2_lat, s2_lon, now
+        ),
+        (
+            "sig_pompeya_03", "Pompeya", "90", "Яндекс Музыка",
+            "Ловец виниловых волн",
+            "Несет в наушниках солнечный дрим-грув и легкую ностальгию уходящего дня.",
+            "Бархатный инди", 0xFF34D399, 5, "Парк Горького · Набережная", 115, 255.0, 0.68, 81, 1, 1,
+            json.dumps({"✦": 2}, ensure_ascii=False), s3_lat, s3_lon, now
+        )
+    ]
+    cur.executemany("""
+        INSERT OR REPLACE INTO devices (
+            id, artist, title, source_name, persona_title, persona_observation,
+            mood_label, color_hex, avatar_petals, zone_name, distance_meters,
+            angle_degrees, distance_ratio, compatibility_percent, resonance_days,
+            encounters_count, reactions_json, lat, lon, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, seed_signals)
+
 def init_db():
     with DB_LOCK:
         conn = get_db_connection()
@@ -382,42 +419,7 @@ def init_db():
 
         cur.execute("SELECT COUNT(*) FROM devices")
         if cur.fetchone()[0] == 0:
-            now = time.time()
-            s1_lat, s1_lon = get_zone_jittered_coords("Вечерняя улица", "seed1")
-            s2_lat, s2_lon = get_zone_jittered_coords("Сретенка · Камерные бары", "seed2")
-            s3_lat, s3_lon = get_zone_jittered_coords("Парк Горького · Набережная", "seed3")
-
-            seed_signals = [
-                (
-                    "sig_sirotkin_01", "Sirotkin", "Август", "Яндекс Музыка",
-                    "Архивариус забытых кассет",
-                    "Слушает теплые гитарные реверберации, превращая суету улицы в медленный ночной фильм.",
-                    "Теплый винил", 0xFF38BDF8, 6, "Вечерняя улица", 38, 35.0, 0.32, 94, 3, 4,
-                    json.dumps({"✦": 4, "🌙": 2}, ensure_ascii=False), s1_lat, s1_lon, now
-                ),
-                (
-                    "sig_molchat_02", "Молчат Дома", "Судно", "VK Музыка",
-                    "Пилигрим неоновых панелек",
-                    "Вслушивается в упругий бас пустых переулков, удерживая пульс вечернего города.",
-                    "Холодный пост-панк", 0xFFA855F7, 8, "Сретенка · Камерные бары", 75, 145.0, 0.52, 88, 2, 3,
-                    json.dumps({"🔥": 3, "🌊": 1}, ensure_ascii=False), s2_lat, s2_lon, now
-                ),
-                (
-                    "sig_pompeya_03", "Pompeya", "90", "Яндекс Музыка",
-                    "Ловец виниловых волн",
-                    "Несет в наушниках солнечный дрим-грув и легкую ностальгию уходящего дня.",
-                    "Бархатный инди", 0xFF34D399, 5, "Парк Горького · Набережная", 115, 255.0, 0.68, 81, 1, 1,
-                    json.dumps({"✦": 2}, ensure_ascii=False), s3_lat, s3_lon, now
-                )
-            ]
-            cur.executemany("""
-                INSERT OR REPLACE INTO devices (
-                    id, artist, title, source_name, persona_title, persona_observation,
-                    mood_label, color_hex, avatar_petals, zone_name, distance_meters,
-                    angle_degrees, distance_ratio, compatibility_percent, resonance_days,
-                    encounters_count, reactions_json, lat, lon, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, seed_signals)
+            seed_default_devices(cur, time.time())
             conn.commit()
 
         cur.execute("SELECT COUNT(*) FROM capsules")
@@ -652,10 +654,16 @@ def build_state_payload(for_device_id: str = None):
 
         now_sec = time.time()
 
-        # Автоматическая очистка старых треков старше 90 минут
+        # Автоматическая очистка старых треков старше 90 минут (кроме постоянных маяков)
         cutoff_time = now_sec - (90 * 60)
-        cur.execute("DELETE FROM devices WHERE updated_at < ?", (cutoff_time,))
+        cur.execute("DELETE FROM devices WHERE updated_at < ? AND id NOT LIKE 'sig_%'", (cutoff_time,))
+        cur.execute("UPDATE devices SET updated_at = ? WHERE id LIKE 'sig_%' AND updated_at < ?", (now_sec - 120, cutoff_time))
         conn.commit()
+
+        cur.execute("SELECT COUNT(*) FROM devices")
+        if cur.fetchone()[0] == 0:
+            seed_default_devices(cur, now_sec)
+            conn.commit()
 
         cur.execute("SELECT * FROM devices ORDER BY updated_at DESC LIMIT 35")
         dev_rows = cur.fetchall()
