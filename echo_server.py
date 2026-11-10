@@ -1146,12 +1146,20 @@ def start_udp_broadcast():
     t.start()
 
 
+class EchoServer(ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        # Подавляем шумные разрывы соединений от мобильных клиентов (WinError 10054 / ConnectionResetError)
+        ex_type, ex_val, _ = sys.exc_info()
+        if ex_type in (ConnectionResetError, BrokenPipeError) or (isinstance(ex_val, OSError) and getattr(ex_val, "winerror", None) == 10054):
+            return
+        super().handle_error(request, client_address)
+
 def main():
     init_db()
     start_udp_broadcast()
     local_ip = get_local_ip()
     echo_token = SERVER_CONFIG.get("echo_token", "")
-    server = ThreadingHTTPServer(("0.0.0.0", HTTP_PORT), EchoRequestHandler)
+    server = EchoServer(("0.0.0.0", HTTP_PORT), EchoRequestHandler)
     logger.info("=" * 66)
     logger.info(" 📡 ЭХО (Echo Radar) — Ночной акустический атлас запущен!")
     logger.info(" 🌐 Локальный адрес в сети : http://%s:%d", local_ip, HTTP_PORT)
