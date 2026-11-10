@@ -15,6 +15,9 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.window.Dialog
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -225,6 +228,9 @@ fun VinylCityMainScreen() {
     var showDropCapsuleDialog by remember { mutableStateOf(false) }
     var showCuratorObservationDialog by remember { mutableStateOf(false) }
     var showCoverZoomDialog by remember { mutableStateOf(false) }
+    var showChronicleDialog by remember { mutableStateOf(false) }
+    var hasSentThankYouToTarget by remember { mutableStateOf<String?>(null) }
+    var sonarFocusTargetId by remember { mutableStateOf<String?>(null) }
 
     // Feedback toast for reactions sent
     var reactionSentFeedback by remember { mutableStateOf<String?>(null) }
@@ -378,19 +384,70 @@ fun VinylCityMainScreen() {
                     selectedVinyl = selectedVinyl,
                     neonPulse = neonPulse,
                     laserPhotonProgress = laserPhotonProgress,
+                    sonarFocusTargetId = sonarFocusTargetId,
                     onVinylSelected = { vinyl ->
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         EchoAudioPlayer.stop()
                         selectedVinyl = vinyl
                         manualSpinning = true
+                        sonarFocusTargetId = vinyl.id
                     },
                     onCenterUserClicked = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         EchoAudioPlayer.stop()
                         selectedVinyl = currentPlayingTrack.toVinylTrack()
                         manualSpinning = true
+                        sonarFocusTargetId = null
+                    },
+                    onFocusClicked = { vinyl ->
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        sonarFocusTargetId = vinyl.id
+                        reactionSentFeedback = "⌖ Сонар сфокусирован: ${vinyl.artist}"
+                    },
+                    onDismissClicked = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        selectedVinyl = currentPlayingTrack.toVinylTrack()
+                        sonarFocusTargetId = null
                     }
                 )
+
+                // Floating Action: Chronicle / History of Echoes (Symmetric Left Bottom)
+                val hasUnreadChronicle by EchoChronicleManager.hasUnread
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = Color(0xFF111622).copy(alpha = 0.95f),
+                    border = BorderStroke(1.dp, if (hasUnreadChronicle) Color(0xFF00F0FF) else Color(0xFF00F0FF).copy(alpha = 0.65f)),
+                    shadowElevation = 6.dp,
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 16.dp, bottom = 12.dp)
+                        .clickable {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            showChronicleDialog = true
+                        }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(text = "📜", fontSize = 13.sp)
+                        Text(
+                            text = "Летопись",
+                            color = Color(0xFF00F0FF),
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        if (hasUnreadChronicle) {
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF00F0FF))
+                            )
+                        }
+                    }
+                }
 
                 // Floating Action: Drop Capsule (Continuous round border, no corner gaps!)
                 Surface(
@@ -455,12 +512,20 @@ fun VinylCityMainScreen() {
                     onOpenInMusicApp = {
                         openMusicApp(context, activeTrack.artist, activeTrack.title, activeTrack.sourceApp)
                     },
-                    onSendReaction = { glyph ->
+                    isThanked = hasSentThankYouToTarget == activeTrack.id,
+                    isSavedInChronicle = EchoChronicleManager.isTrackSaved(activeTrack.artist, activeTrack.title),
+                    onSendThankYou = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        val targetId = if (activeTrack.isSelf) "broadcast" else activeTrack.id
-                        EchoStateRepository.sendReaction(targetId, glyph) { ok ->
-                            reactionSentFeedback = if (ok) "Импульс $glyph отправлен" else "Ошибка отправки"
+                        hasSentThankYouToTarget = activeTrack.id
+                        sonarFocusTargetId = activeTrack.id
+                        EchoStateRepository.sendReaction(activeTrack.id, "✦", "Спасибо за созвучие!") { ok ->
+                            reactionSentFeedback = if (ok) "Волна ушла: «Спасибо за созвучие!» ✨" else "Ошибка отправки"
                         }
+                    },
+                    onSaveToChronicle = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        val added = EchoChronicleManager.saveTrack(activeTrack)
+                        reactionSentFeedback = if (added) "Пластинка сохранена в летопись ночи 📜" else "Уже в вашей летописи"
                     },
                     onOpenCuratorStory = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -730,6 +795,16 @@ fun VinylCityMainScreen() {
         )
     }
 
+    // Chronicle & Echo History Modal (Летопись находок и откликов)
+    if (showChronicleDialog) {
+        EchoChronicleDialog(
+            onDismissRequest = { showChronicleDialog = false },
+            onOpenInMusicApp = { record ->
+                openMusicApp(context, record.artist, record.title, record.sourceApp)
+            }
+        )
+    }
+
     // C. Manual Track Input Modal
     if (showManualTrackDialog) {
         var inputArtist by remember { mutableStateOf(currentPlayingTrack.artist.takeIf { !it.startsWith("Ожидание") } ?: "") }
@@ -965,8 +1040,11 @@ fun VinylCityMapCanvas(
     selectedVinyl: VinylTrack?,
     neonPulse: Float,
     laserPhotonProgress: Float,
+    sonarFocusTargetId: String? = null,
     onVinylSelected: (VinylTrack) -> Unit,
-    onCenterUserClicked: () -> Unit
+    onCenterUserClicked: () -> Unit,
+    onFocusClicked: (VinylTrack) -> Unit = {},
+    onDismissClicked: () -> Unit = {}
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         Canvas(
@@ -1146,6 +1224,22 @@ fun VinylCityMapCanvas(
                     )
                 }
 
+                // Active Sonar Focus Ring Pulse (когда нажат «Фокус» в верхней плашке)
+                if (sonarFocusTargetId == vinyl.id) {
+                    drawCircle(
+                        color = Color(0xFF00F0FF).copy(alpha = 0.65f),
+                        radius = (discRadius * 1.6f) + (6.dp.toPx() * neonPulse),
+                        center = pos,
+                        style = Stroke(width = 1.6.dp.toPx())
+                    )
+                    drawCircle(
+                        color = Color.White.copy(alpha = 0.75f),
+                        radius = (discRadius * 2.2f) + (10.dp.toPx() * neonPulse),
+                        center = pos,
+                        style = Stroke(width = 0.9.dp.toPx())
+                    )
+                }
+
                 // Mini Vinyl Disc
                 val discRadius = (if (isFocused) 16.dp else if (isPc) 14.dp else 12.dp).toPx()
                 drawCircle(color = Color(0xFF141720), radius = discRadius, center = pos)
@@ -1185,7 +1279,13 @@ fun VinylCityMapCanvas(
                     vinyl = vinyl,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
-                        .padding(top = 8.dp)
+                        .padding(top = 8.dp),
+                    onFocusClicked = {
+                        onFocusClicked(vinyl)
+                    },
+                    onDismissClicked = {
+                        onDismissClicked()
+                    }
                 )
             }
         }
@@ -1193,7 +1293,12 @@ fun VinylCityMapCanvas(
 }
 
 @Composable
-fun MiniVinylCalloutPill(vinyl: VinylTrack, modifier: Modifier = Modifier) {
+fun MiniVinylCalloutPill(
+    vinyl: VinylTrack,
+    modifier: Modifier = Modifier,
+    onFocusClicked: () -> Unit = {},
+    onDismissClicked: () -> Unit = {}
+) {
     var coverUrl by remember(vinyl.artist, vinyl.title, vinyl.coverUrl) { mutableStateOf(vinyl.coverUrl) }
     LaunchedEffect(vinyl.artist, vinyl.title, vinyl.coverUrl) {
         if (coverUrl.isNullOrBlank()) {
@@ -1201,14 +1306,16 @@ fun MiniVinylCalloutPill(vinyl: VinylTrack, modifier: Modifier = Modifier) {
         }
     }
     Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = Color(0xFF101624).copy(alpha = 0.95f),
-        border = BorderStroke(1.dp, Color(vinyl.colorHex).copy(alpha = 0.8f)),
-        shadowElevation = 8.dp,
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFF0F1420).copy(alpha = 0.96f),
+        border = BorderStroke(1.2.dp, Color(vinyl.colorHex).copy(alpha = 0.85f)),
+        shadowElevation = 10.dp,
         modifier = modifier
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier
+                .clickable { onFocusClicked() }
+                .padding(horizontal = 10.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -1217,14 +1324,14 @@ fun MiniVinylCalloutPill(vinyl: VinylTrack, modifier: Modifier = Modifier) {
                     model = coverUrl,
                     contentDescription = null,
                     modifier = Modifier
-                        .size(26.dp)
-                        .clip(RoundedCornerShape(6.dp)),
+                        .size(28.dp)
+                        .clip(RoundedCornerShape(7.dp)),
                     contentScale = ContentScale.Crop
                 )
             } else {
-                Text(text = "♫", color = Color(vinyl.colorHex), fontSize = 13.sp)
+                Text(text = "♫", color = Color(vinyl.colorHex), fontSize = 14.sp)
             }
-            Column {
+            Column(modifier = Modifier.weight(1f, fill = false)) {
                 Text(
                     text = "${vinyl.artist} — ${vinyl.title}",
                     color = Color.White,
@@ -1238,6 +1345,33 @@ fun MiniVinylCalloutPill(vinyl: VinylTrack, modifier: Modifier = Modifier) {
                     color = Color(0xFF94A3B8),
                     fontSize = 9.5.sp
                 )
+            }
+            // Интерактивная кнопка фокусировки сонара
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Color(vinyl.colorHex).copy(alpha = 0.16f),
+                border = BorderStroke(0.8.dp, Color(vinyl.colorHex).copy(alpha = 0.6f)),
+                modifier = Modifier.clickable { onFocusClicked() }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(3.dp)
+                ) {
+                    Text(text = "⌖", color = Color(vinyl.colorHex), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    Text(text = "Фокус", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Medium)
+                }
+            }
+            // Кнопка сброса фокуса (закрыть плашку)
+            Box(
+                modifier = Modifier
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(Color(0xFF1E283C))
+                    .clickable { onDismissClicked() },
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "✕", color = Color(0xFF94A3B8), fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -1254,11 +1388,14 @@ fun TurntableDeckView(
     rotationAngle: Float,
     isAudioPlaying: Boolean,
     isAudioLoading: Boolean,
+    isThanked: Boolean,
+    isSavedInChronicle: Boolean,
     onToggleSpin: () -> Unit,
     onToggleAudioPreview: () -> Unit,
     onOpenCoverZoom: () -> Unit,
     onOpenInMusicApp: () -> Unit,
-    onSendReaction: (String) -> Unit,
+    onSendThankYou: () -> Unit,
+    onSaveToChronicle: () -> Unit,
     onOpenCuratorStory: () -> Unit,
     onSelectSelf: () -> Unit
 ) {
@@ -1511,38 +1648,119 @@ fun TurntableDeckView(
                 }
             }
 
-            // B. 5 Vector Atmospheric Resonance Glyphs Bar (Smooth continuous rounded borders!)
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                val glyphs = listOf(
-                    Triple("✦", "Резонанс", Color(0xFF00F0FF)),
-                    Triple("✨", "Созвучие", Color(0xFFA855F7)),
-                    Triple("🌙", "Ночь", Color(0xFF38BDF8)),
-                    Triple("🌲", "Туман", Color(0xFF10B981)),
-                    Triple("⚡", "Искра", Color(0xFFFFB800))
-                )
-
-                glyphs.forEach { (glyph, label, glyphColor) ->
+            // B. TACTILE HARMONY PAIR (Тактильная пара клавиш: «Спасибо за созвучие» + «В летопись ночи»)
+            if (!activeTrack.isSelf) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Клавиша 1: «Спасибо за созвучие» (Кивнуть сквозь темноту)
                     Surface(
-                        shape = RoundedCornerShape(13.dp),
-                        color = Color(0xFF121824),
-                        border = BorderStroke(1.dp, glyphColor.copy(alpha = 0.45f)),
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isThanked) Color(0xFF00F0FF).copy(alpha = 0.16f) else Color(0xFF141926),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isThanked) Color(0xFF00F0FF) else Color(0xFFA855F7).copy(alpha = 0.65f)
+                        ),
                         modifier = Modifier
                             .weight(1f)
-                            .padding(horizontal = 3.dp)
-                            .clickable { onSendReaction(glyph) }
+                            .height(52.dp)
+                            .clickable { onSendThankYou() }
                     ) {
                         Column(
-                            modifier = Modifier.padding(vertical = 6.5.dp),
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
-                            Text(text = glyph, color = glyphColor, fontSize = 16.sp)
-                            Text(text = label, color = Color(0xFF94A3B8), fontSize = 9.5.sp)
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Text(
+                                    text = if (isThanked) "✓" else "∿",
+                                    color = if (isThanked) Color(0xFF00F0FF) else Color(0xFFA855F7),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (isThanked) "Волна ушла ✨" else "Спасибо за звук",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Text(
+                                text = if (isThanked) "Кивок сквозь ночь принят" else "Кивнуть сквозь темноту",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 9.sp
+                            )
                         }
+                    }
+
+                    // Клавиша 2: «В летопись ночи» (Сохранить находку)
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = if (isSavedInChronicle) Color(0xFFFFB800).copy(alpha = 0.16f) else Color(0xFF141926),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isSavedInChronicle) Color(0xFFFFB800) else Color(0xFF38BDF8).copy(alpha = 0.65f)
+                        ),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(52.dp)
+                            .clickable { onSaveToChronicle() }
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Text(
+                                    text = if (isSavedInChronicle) "✓" else "📜",
+                                    color = if (isSavedInChronicle) Color(0xFFFFB800) else Color(0xFF38BDF8),
+                                    fontSize = 12.sp
+                                )
+                                Text(
+                                    text = if (isSavedInChronicle) "В летописи" else "В летопись ночи",
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Text(
+                                text = if (isSavedInChronicle) "Сохранено на память" else "Сохранить находку себе",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 9.sp
+                            )
+                        }
+                    }
+                }
+            } else {
+                // Собственный винил пользователя
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF101622),
+                    border = BorderStroke(0.8.dp, Color(0xFF1E283C)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "✦ Ваш винил транслируется в эфир квартала",
+                            color = Color(0xFF00F0FF).copy(alpha = 0.85f),
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium
+                        )
                     }
                 }
             }
@@ -1640,5 +1858,310 @@ fun openMusicApp(context: Context, artist: String, title: String, sourceApp: Str
             }
             context.startActivity(browserIntent)
         } catch (e: Exception) {}
+    }
+}
+
+
+// -------------------------------------------------------------
+// CHRONICLE & HISTORY DIALOG (ЛЕТОПИСЬ ЭФИРА И ОТКЛИКОВ)
+// -------------------------------------------------------------
+fun calculateTimeAgo(timestampSec: Long): String {
+    val now = System.currentTimeMillis() / 1000
+    val diff = now - timestampSec
+    return when {
+        diff < 60 -> "только что"
+        diff < 3600 -> "${maxOf(1L, diff / 60)} мин назад"
+        diff < 86400 -> "${diff / 3600} ч назад"
+        else -> "${diff / 86400} дн назад"
+    }
+}
+
+@Composable
+fun EchoChronicleDialog(
+    onDismissRequest: () -> Unit,
+    onOpenInMusicApp: (ChronicleTrackRecord) -> Unit
+) {
+    var selectedTab by remember { mutableStateOf(0) }
+    val savedTracks = EchoChronicleManager.savedTracks
+    val incomingEchoes = EchoChronicleManager.incomingEchoes
+
+    LaunchedEffect(Unit) {
+        EchoChronicleManager.markAllRead()
+    }
+
+    Dialog(onDismissRequest = onDismissRequest) {
+        Surface(
+            shape = RoundedCornerShape(24.dp),
+            color = Color(0xFF0E1420),
+            border = BorderStroke(1.2.dp, Color(0xFF00F0FF).copy(alpha = 0.65f)),
+            shadowElevation = 16.dp,
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.78f)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(18.dp)
+            ) {
+                // Header
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(text = "📜", fontSize = 18.sp)
+                        Column {
+                            Text(
+                                text = "Летопись эфира",
+                                color = Color.White,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Эхо ночных встреч и находок",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                    IconButton(onClick = onDismissRequest) {
+                        Text(text = "✕", color = Color(0xFF94A3B8), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Tabs Selector
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xFF141C2B))
+                        .padding(3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(11.dp))
+                            .background(if (selectedTab == 0) Color(0xFF00F0FF).copy(alpha = 0.2f) else Color.Transparent)
+                            .clickable { selectedTab = 0 }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Отклики (${incomingEchoes.size})",
+                            color = if (selectedTab == 0) Color(0xFF00F0FF) else Color(0xFF94A3B8),
+                            fontSize = 12.sp,
+                            fontWeight = if (selectedTab == 0) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(11.dp))
+                            .background(if (selectedTab == 1) Color(0xFFFFB800).copy(alpha = 0.2f) else Color.Transparent)
+                            .clickable { selectedTab = 1 }
+                            .padding(vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Мои находки (${savedTracks.size})",
+                            color = if (selectedTab == 1) Color(0xFFFFB800) else Color(0xFF94A3B8),
+                            fontSize = 12.sp,
+                            fontWeight = if (selectedTab == 1) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Tab Content
+                if (selectedTab == 0) {
+                    if (incomingEchoes.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(text = "🌌", fontSize = 32.sp)
+                                Text(
+                                    text = "В эфире пока тихо",
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Когда кто-то в квартале поймает вашу волну и поблагодарит за музыку, здесь зажгутся отклики созвучия.",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 11.5.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 20.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(incomingEchoes) { echo ->
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = Color(0xFF141B28),
+                                    border = BorderStroke(0.8.dp, Color(0xFF25334A)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(CircleShape)
+                                                .background(Color(0xFF00F0FF).copy(alpha = 0.15f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(text = echo.symbol, color = Color(0xFF00F0FF), fontSize = 16.sp)
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = echo.message,
+                                                color = Color.White,
+                                                fontSize = 12.5.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            val timeAgo = calculateTimeAgo(echo.timeSec)
+                                            Text(
+                                                text = "От: ${echo.senderId.take(12)} • $timeAgo",
+                                                color = Color(0xFF94A3B8),
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    if (savedTracks.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(text = "📻", fontSize = 32.sp)
+                                Text(
+                                    text = "Летопись пуста",
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "Нажмите «В летопись ночи» на пластинке любого слушателя, чтобы сохранить музыку в свой закрытый архив находок.",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 11.5.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 20.dp)
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            items(savedTracks) { track ->
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = Color(0xFF141B28),
+                                    border = BorderStroke(0.8.dp, Color(0xFFFFB800).copy(alpha = 0.35f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        if (!track.coverUrl.isNullOrBlank()) {
+                                            AsyncImage(
+                                                model = track.coverUrl,
+                                                contentDescription = null,
+                                                modifier = Modifier
+                                                    .size(42.dp)
+                                                    .clip(RoundedCornerShape(8.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(42.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(Color(0xFF1E283C)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(text = "♫", color = Color(0xFFFFB800), fontSize = 16.sp)
+                                            }
+                                        }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = track.title,
+                                                color = Color.White,
+                                                fontSize = 13.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = track.artist,
+                                                color = Color(0xFF38BDF8),
+                                                fontSize = 11.5.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "${track.distanceLabel} • ${track.resonancePercent}% резонанс",
+                                                color = Color(0xFF94A3B8),
+                                                fontSize = 9.5.sp
+                                            )
+                                        }
+                                        IconButton(
+                                            onClick = { onOpenInMusicApp(track) },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Text(text = "▶", color = Color(0xFF00F0FF), fontSize = 15.sp)
+                                        }
+                                        IconButton(
+                                            onClick = { EchoChronicleManager.removeTrack(track.id) },
+                                            modifier = Modifier.size(30.dp)
+                                        ) {
+                                            Text(text = "✕", color = Color(0xFF64748B), fontSize = 12.sp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }

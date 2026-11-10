@@ -857,6 +857,19 @@ def build_state_payload(for_device_id: str = None):
 
         conn.close()
 
+    reactions_history = []
+    with REACTIONS_LOCK:
+        for r in RECENT_REACTIONS:
+            if not for_device_id or r.get("targetId") in (for_device_id, "") or r.get("senderId") == for_device_id:
+                reactions_history.append({
+                    "id": r["id"],
+                    "targetId": r.get("targetId", ""),
+                    "senderId": r.get("senderId", ""),
+                    "symbol": r.get("symbol", "✦"),
+                    "message": r.get("message", "Спасибо за созвучие"),
+                    "time": r.get("time", now_sec)
+                })
+
     return {
         "status": "ok",
         "serverTime": int(now_sec),
@@ -865,6 +878,7 @@ def build_state_payload(for_device_id: str = None):
         "eveningTraces": evening_traces,
         "cityZones": city_zones,
         "incomingBanner": active_banner,
+        "reactionsHistory": reactions_history[-25:],
         "myReactions": my_reactions,
         "myRefinedMood": my_refined_mood,
         "myCuratedPersona": my_curated_persona,
@@ -1080,8 +1094,9 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
             target_id = str(data.get("targetId") or data.get("signalId") or "")
             sender_id = str(data.get("senderId") or "unknown_sender")
             symbol = str(data.get("symbol") or "✦")
+            custom_msg = str(data.get("message") or "").strip()
             rec_id = int(time.time() * 1000)
-            msg = f"Вам отправлен импульс {symbol}"
+            msg = custom_msg if custom_msg else f"Спасибо за созвучие {symbol}"
 
             with REACTIONS_LOCK:
                 RECENT_REACTIONS.append({

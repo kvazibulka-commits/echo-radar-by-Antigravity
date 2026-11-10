@@ -133,6 +133,7 @@ object EchoStateRepository {
 
     fun init(context: Context) {
         _appContext = context.applicationContext
+        EchoChronicleManager.init(context)
         val prefs = context.getSharedPreferences("echo_prefs", Context.MODE_PRIVATE)
         deviceId = prefs.getString("device_id", null) ?: run {
             val newId = "android_" + java.util.UUID.randomUUID().toString().replace("-", "").take(12)
@@ -379,6 +380,25 @@ object EchoStateRepository {
                 }
             }
 
+            // 5. История откликов эфира для Летописи созвучий
+            val histArr = json.optJSONArray("reactionsHistory")
+            if (histArr != null) {
+                val histList = mutableListOf<EchoReactionRecord>()
+                for (i in 0 until histArr.length()) {
+                    val item = histArr.getJSONObject(i)
+                    histList.add(
+                        EchoReactionRecord(
+                            id = item.optLong("id", 0L),
+                            senderId = item.optString("senderId", "Слушатель"),
+                            symbol = item.optString("symbol", "✦"),
+                            message = item.optString("message", "Спасибо за созвучие"),
+                            timeSec = item.optLong("time", System.currentTimeMillis() / 1000)
+                        )
+                    )
+                }
+                EchoChronicleManager.updateReactionsHistory(histList)
+            }
+
         } catch (e: IOException) {
             consecutiveErrors++
             _connectionStatus.value = "✗ Нет связи с сервером"
@@ -480,7 +500,7 @@ object EchoStateRepository {
     }
 
     // ── Отправка тихих реакций / настроений на сервер ──
-    fun sendReaction(targetId: String, symbol: String, onResult: ((Boolean) -> Unit)? = null) {
+    fun sendReaction(targetId: String, symbol: String, message: String = "Спасибо за созвучие!", onResult: ((Boolean) -> Unit)? = null) {
         scope.launch {
             val url = buildUrl("/api/react")
             if (url.isBlank()) {
@@ -491,6 +511,7 @@ object EchoStateRepository {
                 put("targetId", targetId)
                 put("senderId", deviceId)
                 put("symbol", symbol)
+                put("message", message)
             }.toString()
 
             val token = _echoToken.value
