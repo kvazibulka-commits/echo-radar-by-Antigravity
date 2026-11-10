@@ -321,12 +321,13 @@ fun EchoRadarAppScreen() {
                         .pointerInput(nearbySignalsFlow) {
                             detectTapGestures { tapOffset ->
                                 val center = Offset(size.width / 2f, size.height / 2f)
-                                val maxR = size.minDimension * 0.44f
+                                val minDim = minOf(size.width, size.height).toFloat()
+                                val maxR = minDim * 0.44f
                                 val hit = nearbySignalsFlow.minByOrNull { sig ->
                                     val rad = Math.toRadians(sig.angleDeg.toDouble())
                                     val r = maxR * sig.ringFactor.coerceIn(0.2f, 0.95f)
-                                    val bx = center.x + (r * cos(rad)).toFloat()
-                                    val by = center.y + (r * sin(rad)).toFloat()
+                                    val bx = center.x + (r.toDouble() * cos(rad)).toFloat()
+                                    val by = center.y + (r.toDouble() * sin(rad)).toFloat()
                                     val dx = tapOffset.x - bx
                                     val dy = tapOffset.y - by
                                     dx * dx + dy * dy
@@ -334,9 +335,11 @@ fun EchoRadarAppScreen() {
                                 if (hit != null) {
                                     val rad = Math.toRadians(hit.angleDeg.toDouble())
                                     val r = maxR * hit.ringFactor.coerceIn(0.2f, 0.95f)
-                                    val bx = center.x + (r * cos(rad)).toFloat()
-                                    val by = center.y + (r * sin(rad)).toFloat()
-                                    val dist = sqrt((tapOffset.x - bx) * (tapOffset.x - bx) + (tapOffset.y - by) * (tapOffset.y - by))
+                                    val bx = center.x + (r.toDouble() * cos(rad)).toFloat()
+                                    val by = center.y + (r.toDouble() * sin(rad)).toFloat()
+                                    val dx = tapOffset.x - bx
+                                    val dy = tapOffset.y - by
+                                    val dist = sqrt(dx * dx + dy * dy)
                                     if (dist < 32.dp.toPx()) {
                                         selectedSignal = hit
                                         sentSymbolMessage = ""
