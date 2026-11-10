@@ -1166,6 +1166,112 @@ def start_udp_broadcast():
     t.start()
 
 
+
+def start_windows_media_listener():
+    """Автоматический перехват играющей на Windows музыки (Яндекс Музыка / Spotify / Chrome / VK)
+    через Windows SMTC. Мгновенно передает ПК-трек в эфир как маяк pc_studio_node."""
+    def _worker():
+        try:
+            import asyncio
+            from winrt.windows.media.control import GlobalSystemMediaTransportControlsSessionManager
+        except Exception as e:
+            logger.info("ℹ️ Windows SMTC недоступен: %s", e)
+            return
+
+        logger.info("🎧 Автоперехватчик музыки с ПК (Windows SMTC) активен!")
+        last_track = ("", "")
+        last_update = 0.0
+        last_logged = ("", "")
+
+        async def _check_media():
+            nonlocal last_track, last_update, last_logged
+            try:
+                manager = await GlobalSystemMediaTransportControlsSessionManager.request_async()
+                session = manager.get_current_session()
+                if not session:
+                    return
+
+                props = await session.try_get_media_properties_async()
+                if not props:
+                    return
+
+                artist = (props.artist or "").strip()
+                title = (props.title or "").strip()
+                app_id = session.source_app_user_model_id or "ПК плеер"
+                app_name = app_id.split(".")[-1].split("!")[-1] or "Windows"
+
+                if not artist and not title:
+                    return
+
+                curr = (artist, title)
+                now = time.time()
+
+                if curr != last_track or (now - last_update > 15.0):
+                    last_track = curr
+                    last_update = now
+
+                    dev_id = "pc_studio_node"
+                    zone_name = "Вечерняя улица"
+                    lat, lon = get_zone_jittered_coords(zone_name, dev_id)
+
+                    future = _PERSONA_EXECUTOR.submit(generate_curated_persona, artist, title, dev_id, [])
+                    try:
+                        curated = future.result(timeout=4.0)
+                    except Exception:
+                        curated = {
+                            "personaTitle": "Архивариус забытых кассет",
+                            "moodLabel": "Теплый винил",
+                            "personaObservation": f"Слушает {artist} через {app_name} на вечернем компьютере.",
+                            "colorHex": 0xFF38BDF8,
+                            "avatarPetals": 6,
+                            "compatibilityPercent": 94
+                        }
+
+                    with DB_LOCK:
+                        conn = get_db_connection()
+                        cur = conn.cursor()
+                        cur.execute("SELECT encounters_count, resonance_days, reactions_json FROM devices WHERE id = ?", (dev_id,))
+                        existing = cur.fetchone()
+                        enc_count = existing[0] if existing else 1
+                        res_days = existing[1] if existing else 1
+                        reactions_json = existing[2] if existing else "{}"
+
+                        cur.execute("""
+                            INSERT OR REPLACE INTO devices (
+                                id, artist, title, source_name, persona_title, persona_observation,
+                                mood_label, color_hex, avatar_petals, zone_name, distance_meters,
+                                angle_degrees, distance_ratio, compatibility_percent, resonance_days,
+                                encounters_count, reactions_json, lat, lon, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (
+                            dev_id, artist, title, f"ПК ({app_name})",
+                            curated["personaTitle"], curated["personaObservation"],
+                            curated["moodLabel"], ensure_opaque_color(int(curated["colorHex"])),
+                            int(curated["avatarPetals"]), zone_name, 28,
+                            42.0, 0.28, int(curated["compatibilityPercent"]), res_days, enc_count, reactions_json,
+                            lat, lon, now
+                        ))
+                        conn.commit()
+                        conn.close()
+
+                    if curr != last_logged:
+                        last_logged = curr
+                        logger.info("📡 СИГНАЛ ПК [%s] %s: %s — %s (%s)", zone_name, dev_id, artist, title, app_name)
+            except Exception as ex:
+                logger.debug("SMTC check error: %s", ex)
+
+        while True:
+            try:
+                import asyncio
+                asyncio.run(_check_media())
+            except Exception as e:
+                logger.debug("SMTC loop error: %s", e)
+            time.sleep(2.5)
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+
 class EchoServer(ThreadingHTTPServer):
     def handle_error(self, request, client_address):
         # Подавляем шумные разрывы соединений от мобильных клиентов (WinError 10054 / ConnectionResetError)
@@ -1177,6 +1283,7 @@ class EchoServer(ThreadingHTTPServer):
 def main():
     init_db()
     start_udp_broadcast()
+    start_windows_media_listener()
     local_ip = get_local_ip()
     echo_token = SERVER_CONFIG.get("echo_token", "")
     server = EchoServer(("0.0.0.0", HTTP_PORT), EchoRequestHandler)
