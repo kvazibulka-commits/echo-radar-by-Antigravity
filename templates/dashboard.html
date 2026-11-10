@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ЭХО • Пульт Управления Эфиром</title>
+<style>
+  body { background: #070A12; color: #E2E8F0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 24px; line-height: 1.5; }
+  .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1E293B; padding-bottom: 16px; margin-bottom: 24px; }
+  .title { font-size: 26px; font-weight: 900; letter-spacing: 3px; color: #38BDF8; }
+  .meta { color: #94A3B8; font-size: 13px; }
+  .btn-pwa { background: linear-gradient(135deg, #0284C7, #0369A1); color: #FFF; padding: 10px 18px; border-radius: 12px; font-weight: bold; text-decoration: none; display: inline-block; }
+  .btn-pwa:hover { opacity: 0.9; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px; }
+  .card { background: #111827; border: 1px solid #1E293B; border-radius: 18px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+  .card h3 { margin-top: 0; color: #F8FAFC; font-size: 17px; border-bottom: 1px solid #1E293B; padding-bottom: 8px; }
+  .sig { border-left: 3px solid #38BDF8; padding-left: 12px; margin-bottom: 14px; }
+  input, select, button { background: #1E293B; color: #FFF; border: 1px solid #334155; padding: 10px 14px; border-radius: 10px; margin-top: 6px; box-sizing: border-box; font-size: 14px; }
+  button { background: #0284C7; border: none; cursor: pointer; font-weight: 600; transition: background 0.2s; }
+  button:hover { background: #0369A1; }
+  .ai-status { font-size: 12px; padding: 4px 8px; border-radius: 6px; background: #064E3B; color: #6EE7B7; display: inline-block; margin-top: 6px; }
+  .toast-banner {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-100px);
+    background: rgba(15, 23, 42, 0.94); border: 1px solid #38BDF8; border-radius: 16px;
+    padding: 10px 20px; display: flex; align-items: center; gap: 10px; z-index: 2000;
+    box-shadow: 0 10px 30px rgba(56, 189, 248, 0.3); opacity: 0; pointer-events: none;
+    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .toast-banner.visible { transform: translateX(-50%) translateY(0); opacity: 1; pointer-events: auto; }
+</style>
+</head>
+<body>
+  <div id="toastNotification" class="toast-banner">
+    <span id="toastSymbol" style="font-size: 22px;">✦</span>
+    <span id="toastText" style="font-size: 13px; font-weight: 600; color: #F8FAFC;">Импульс принят</span>
+  </div>
+
+  <div class="header">
+    <div>
+      <div class="title">ЭХО • ЦЕНТР МУЗЫКАЛЬНОГО ЭФИРА</div>
+      <div class="meta">«Ты видишь не людей вокруг. Ты видишь музыку, которая сейчас живет вокруг тебя».</div>
+    </div>
+    <a class="btn-pwa" href="/app">📱 Открыть Сонар и Карту на iPad (/app) →</a>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>✨ Интеллектуальный ИИ-Куратор</h3>
+      <p class="meta">Подключите бесплатный ключ Gemini API, чтобы литературные образы создавались живым интеллектом без шаблонных штампов.</p>
+      <input id="geminiKey" type="password" placeholder="Вставьте Gemini API Key" style="width:100%"><br>
+      <button onclick="saveAiKey()">Сохранить ключ</button>
+      <span id="keyStatus" class="ai-status">Режим: Поэтический синтезатор ЭХО</span>
+    </div>
+
+    <div class="card">
+      <h3>🏛️ Музыкальный тайник локации (B2B)</h3>
+      <p class="meta">Для кофеен, виниловых лавок и книжных: оставьте капсулу с бонусом для гостей.</p>
+      <input id="venueName" placeholder="Название места (напр. Кофейня «Эспрессо & Винил»)" style="width:100%"><br>
+      <input id="venueArtist" placeholder="Артист" value="Chet Baker" style="width:100%"><br>
+      <input id="venueTitle" placeholder="Трек" value="I Fall In Love Too Easily" style="width:100%"><br>
+      <select id="venueZone" style="width:100%">
+        <option value="Вечерняя улица">Вечерняя улица</option>
+        <option value="Сретенка · Камерные бары">Сретенка · Камерные бары</option>
+        <option value="Парк Горького · Набережная">Парк Горького · Набережная</option>
+        <option value="Покровка · Ночные кофейни">Покровка · Ночные кофейни</option>
+        <option value="Северный лесопарк">Северный лесопарк</option>
+      </select><br>
+      <input id="venueMsg" placeholder="Послание и бонус гостям" value="Скидка 15% на фильтр по кодовому слову «ЭХО-ДЖАЗ»" style="width:100%"><br>
+      <button onclick="dropVenueCapsule()">Закрепить тайник в локации</button>
+    </div>
+
+    <div class="card">
+      <h3>📡 Трансляция в эфир с ПК</h3>
+      <input id="artist" placeholder="Артист" value="Sirotkin" style="width:100%"><br>
+      <input id="title" placeholder="Трек" value="Бейся сердце" style="width:100%"><br>
+      <select id="zoneSelect" style="width:100%">
+        <option value="Вечерняя улица">Вечерняя улица</option>
+        <option value="Сретенка · Камерные бары">Сретенка · Камерные бары</option>
+        <option value="Парк Горького · Набережная">Парк Горького · Набережная</option>
+        <option value="Покровка · Ночные кофейни">Покровка · Ночные кофейни</option>
+        <option value="Северный лесопарк">Северный лесопарк</option>
+      </select><br>
+      <button onclick="sendSignal()">Отправить сигнал на Сонар и Карту</button>
+    </div>
+
+    <div class="card">
+      <h3>Музыкальные тайники (<span id="capCount">0</span>)</h3>
+      <div id="capsulesList" style="max-height: 280px; overflow-y: auto;">Загрузка...</div>
+    </div>
+  </div>
+
+<script>
+let lastKnownBannerId = 0;
+let toastTimeout = null;
+
+function showToast(text, symbol = '✦') {
+  const toast = document.getElementById('toastNotification');
+  document.getElementById('toastSymbol').innerText = symbol;
+  document.getElementById('toastText').innerText = text;
+  toast.classList.add('visible');
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => {
+    toast.classList.remove('visible');
+  }, 3200);
+}
+
+async function loadStatus() {
+  const r = await fetch('/api/state');
+  const d = await r.json();
+
+  document.getElementById('capCount').innerText = d.capsules.length;
+  document.getElementById('capsulesList').innerHTML = d.capsules.map(c => `
+    <div class="sig" style="border-color:${c.isVenue ? '#38BDF8' : '#F59E0B'}">
+      <div><b>${c.isVenue ? '🏛️ ' + (c.venueName || 'Тайник заведения') : '⏳ ' + c.artist + ' — ' + c.title}</b></div>
+      <div class="meta">${c.zoneName} • ${c.artist} — ${c.title}</div>
+      <div class="meta"><i>«${c.secretMessage}»</i></div>
+    </div>
+  `).join('');
+
+  if (d.incomingBanner && d.incomingBanner.id !== lastKnownBannerId) {
+    lastKnownBannerId = d.incomingBanner.id;
+    if (d.incomingBanner.senderId !== 'pc_studio_node') {
+      showToast(d.incomingBanner.message, d.incomingBanner.symbol);
+    }
+  }
+}
+
+async function saveAiKey() {
+  const k = document.getElementById('geminiKey').value.trim();
+  const res = await fetch('/api/save_config', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ gemini_api_key: k })
+  });
+  if (res.ok) {
+    showToast('Ключ ИИ-куратора сохранен!', '✨');
+  }
+}
+
+async function sendSignal() {
+  const artist = document.getElementById('artist').value;
+  const title = document.getElementById('title').value;
+  const zoneName = document.getElementById('zoneSelect').value;
+  await fetch('/api/signal', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ id: 'pc_studio_node', artist, title, zoneName, sourceName: 'PC Studio' })
+  });
+  loadStatus();
+}
+
+async function dropVenueCapsule() {
+  const vName = document.getElementById('venueName').value.trim();
+  const vArtist = document.getElementById('venueArtist').value.trim();
+  const vTitle = document.getElementById('venueTitle').value.trim();
+  const vZone = document.getElementById('venueZone').value;
+  const vMsg = document.getElementById('venueMsg').value.trim();
+
+  await fetch('/api/drop_capsule', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      creatorId: 'venue_' + Date.now(),
+      artist: vArtist || 'Chet Baker',
+      title: vTitle || 'I Fall In Love Too Easily',
+      zoneName: vZone,
+      secretMessage: vMsg,
+      isVenue: true,
+      venueName: vName || 'Атмосферное место'
+    })
+  });
+  showToast('Музыкальный тайник заведения закреплен на карте!', '🏛️');
+  loadStatus();
+}
+
+loadStatus();
+setInterval(loadStatus, 2500);
+</script>
+</body>
+</html>

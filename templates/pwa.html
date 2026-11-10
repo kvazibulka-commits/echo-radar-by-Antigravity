@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>ЭХО • Музыкальный Атлас</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; padding: 0; background: #070A12; color: #E2E8F0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column; height: 100vh; height: 100dvh; overflow: hidden;
+  }
+  .app-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; border-bottom: 1px solid #1E293B; background: rgba(11, 19, 37, 0.85);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); z-index: 10;
+  }
+  .logo { font-size: 22px; font-weight: 900; letter-spacing: 4px; color: #F8FAFC; }
+  .zone-pill {
+    background: #1E293B; color: #38BDF8; font-size: 12px; font-weight: 600;
+    padding: 6px 12px; border-radius: 20px; border: 1px solid #334155; cursor: pointer;
+  }
+  .tabs {
+    display: flex; background: #0F172A; margin: 8px 16px; border-radius: 12px; padding: 3px; z-index: 10;
+  }
+  .tab-btn {
+    flex: 1; text-align: center; padding: 8px 4px; font-size: 13px; font-weight: 600;
+    color: #64748B; border-radius: 9px; cursor: pointer; transition: all 0.2s;
+  }
+  .tab-btn.active { background: #1E293B; color: #38BDF8; }
+  .content-area { flex: 1; position: relative; overflow: hidden; }
+  .tab-view { display: none; width: 100%; height: 100%; overflow-y: auto; }
+  .tab-view.active { display: block; }
+  canvas#sonarCanvas { width: 100%; height: 100%; display: block; }
+  #mapContainer { width: 100%; height: 100%; background: #070A12; }
+  .card-sig {
+    background: #111827; border: 1px solid #1E293B; border-radius: 16px; padding: 14px;
+    margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;
+  }
+
+  .toast-banner {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-100px);
+    background: rgba(15, 23, 42, 0.94); border: 1px solid #38BDF8; border-radius: 16px;
+    padding: 10px 18px; display: flex; align-items: center; gap: 10px; z-index: 2000;
+    box-shadow: 0 10px 30px rgba(56, 189, 248, 0.3); opacity: 0; pointer-events: none;
+    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .toast-banner.visible {
+    transform: translateX(-50%) translateY(0); opacity: 1; pointer-events: auto;
+  }
+
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.78);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    z-index: 1000; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal-box {
+    background: #0F172A; border: 1.5px solid #38BDF8; border-radius: 24px;
+    padding: 22px; max-width: 360px; width: 100%; text-align: center;
+    box-shadow: 0 10px 40px rgba(56, 189, 248, 0.25);
+  }
+  .avatar-disc {
+    width: 76px; height: 76px; border-radius: 50%; margin: 0 auto 12px;
+    background: radial-gradient(circle, #38BDF8, #0B1325); border: 2px solid #38BDF8;
+    animation: spinVinyl 12s linear infinite;
+  }
+  @keyframes spinVinyl { 100% { transform: rotate(360deg); } }
+  .btn-react {
+    background: #1E293B; border: 1px solid #334155; color: #FFF; padding: 8px 12px;
+    border-radius: 8px; font-size: 16px; margin: 4px; cursor: pointer;
+  }
+  .btn-listen {
+    display: block; width: 100%; background: #0284C7; color: #FFF; text-decoration: none;
+    padding: 12px; border-radius: 12px; font-weight: bold; margin-top: 14px;
+  }
+
+  .leaflet-container { background: #070A12 !important; }
+  .leaflet-tile {
+    filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7) !important;
+  }
+  .leaflet-bar a { background-color: #1E293B !important; color: #38BDF8 !important; border-bottom: 1px solid #334155 !important; }
+  .leaflet-bar a:hover { background-color: #334155 !important; }
+</style>
+</head>
+<body>
+  <div id="toastNotification" class="toast-banner">
+    <span id="toastSymbol" style="font-size: 22px;">✦</span>
+    <span id="toastText" style="font-size: 13px; font-weight: 600; color: #F8FAFC;">Импульс принят</span>
+  </div>
+
+  <div class="app-header">
+    <div class="logo">ЭХО</div>
+    <div class="zone-pill" id="currentZoneText" onclick="openZonePicker()">Вечерняя улица ▾</div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab-btn active" onclick="switchTab(0)">Сонар</div>
+    <div class="tab-btn" onclick="switchTab(1)">Карта города</div>
+    <div class="tab-btn" onclick="switchTab(2)" id="tabAirBtn">Эфир (0)</div>
+    <div class="tab-btn" onclick="switchTab(3)">Тайники</div>
+  </div>
+
+  <div class="content-area">
+    <div class="tab-view active" id="tab0" style="padding:0;">
+      <canvas id="sonarCanvas"></canvas>
+    </div>
+
+    <div class="tab-view" id="tab1" style="padding:0;">
+      <div id="mapContainer"></div>
+    </div>
+
+    <div class="tab-view" id="tab2" style="padding:14px 16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <span style="font-weight:bold; color:#38BDF8;">Музыкальные волны вокруг</span>
+        <button onclick="copyEveningPlaylist()" style="background:#0284C7; border:none; color:#FFF; padding:6px 12px; border-radius:8px; font-weight:bold; cursor:pointer; font-size:12px;">✦ Плейлист вечера</button>
+      </div>
+      <div id="signalsFeed"></div>
+    </div>
+
+    <div class="tab-view" id="tab3" style="padding:14px 16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <span style="font-weight:bold; color:#FBBF24;">Капсулы времени рядом</span>
+        <button onclick="openDropModal()" style="background:#F59E0B; border:none; color:#000; padding:6px 12px; border-radius:8px; font-weight:bold; cursor:pointer;">+ Оставить тайник</button>
+      </div>
+      <div id="capsulesFeed"></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="passportModal" onclick="closeModal(event)">
+    <div class="modal-box" onclick="event.stopPropagation()">
+      <div class="avatar-disc" id="modalAvatar"></div>
+      <div id="modalPersonaTitle" style="font-size:16px; font-weight:bold; color:#38BDF8;"></div>
+      <div id="modalMood" style="font-size:12px; color:#94A3B8; margin-bottom:8px;"></div>
+      <div style="background:#1E293B; padding:12px; border-radius:12px; margin:10px 0;">
+        <div id="modalTrack" style="font-weight:bold; font-size:15px; color:#FFF;"></div>
+        <div id="modalObs" style="font-size:12px; font-style:italic; color:#CBD5E1; margin-top:4px;"></div>
+      </div>
+      <div style="display:flex; justify-content:center; gap:6px; margin: 10px 0;">
+        <button class="btn-react" onclick="sendReaction('✦')">✦</button>
+        <button class="btn-react" onclick="sendReaction('🔥')">🔥</button>
+        <button class="btn-react" onclick="sendReaction('🌊')">🌊</button>
+        <button class="btn-react" onclick="sendReaction('🌙')">🌙</button>
+      </div>
+      <a id="modalListenLink" class="btn-listen" target="_blank">▶ Открыть в плеере</a>
+    </div>
+  </div>
+
+<script>
+let currentZone = "Вечерняя улица";
+let appState = { signals: [], capsules: [], cityZones: [] };
+let selectedSignal = null;
+let sweepAngle = 0;
+let map = null;
+let mapFogGroup = null;
+let mapLayersGroup = null;
+let lastKnownBannerId = 0;
+let toastTimeout = null;
+
+const canvas = document.getElementById('sonarCanvas');
+const ctx = canvas.getContext('2d');
+
+function showToast(text, symbol = '✦') {
+  const toast = document.getElementById('toastNotification');
+  document.getElementById('toastSymbol').innerText = symbol;
+  document.getElementById('toastText').innerText = text;
+  toast.classList.add('visible');
+  if (toastTimeout) clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => {
+    toast.classList.remove('visible');
+  }, 3200);
+}
+
+function copyEveningPlaylist() {
+  if (!appState.signals || appState.signals.length === 0) {
+    showToast("В эфире пока нет треков", "✦");
+    return;
+  }
+  const lines = appState.signals.map((s, i) => `${i + 1}. ${s.artist} — ${s.title} (${s.personaTitle})`);
+  const text = "✦ Плейлист моего вечера • ЭХО ✦\\n\\n" + lines.join("\\n");
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text);
+    showToast("Плейлист вечера скопирован в буфер обмена!", "✦");
+  } else {
+    prompt("Скопируйте ваш плейлист вечера:", text);
+  }
+}
+
+function resizeCanvas() {
+  canvas.width = canvas.parentElement.clientWidth * window.devicePixelRatio;
+  canvas.height = canvas.parentElement.clientHeight * window.devicePixelRatio;
+}
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+function initNightMap() {
+  if (map) return;
+  map = L.map('mapContainer', {
+    zoomControl: true,
+    attributionControl: false
+  }).setView([55.7558, 37.6176], 13);
+
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19
+  }).addTo(map);
+
+  mapFogGroup = L.layerGroup().addTo(map);
+  mapLayersGroup = L.layerGroup().addTo(map);
+}
+
+function switchTab(idx) {
+  document.querySelectorAll('.tab-btn').forEach((b, i) => b.classList.toggle('active', i === idx));
+  document.querySelectorAll('.tab-view').forEach((v, i) => v.classList.toggle('active', i === idx));
+
+  if (idx === 1) {
+    initNightMap();
+    setTimeout(() => {
+      map.invalidateSize();
+      renderMapHalos();
+    }, 200);
+  }
+}
+
+async function fetchState() {
+  try {
+    const res = await fetch('/api/state');
+    appState = await res.json();
+    renderFeed();
+
+    if (appState.incomingBanner && appState.incomingBanner.id !== lastKnownBannerId) {
+      lastKnownBannerId = appState.incomingBanner.id;
+      if (appState.incomingBanner.senderId !== 'pwa_client') {
+        showToast(appState.incomingBanner.message, appState.incomingBanner.symbol);
+      }
+    }
+
+    if (map && document.getElementById('tab1').classList.contains('active')) {
+      renderMapHalos();
+    }
+  } catch (e) {}
+}
+
+function renderMapHalos() {
+  if (!mapLayersGroup) return;
+  mapLayersGroup.clearLayers();
+  mapFogGroup.clearLayers();
+
+  const nowSec = Date.now() / 1000;
+
+  if (appState.cityZones) {
+    appState.cityZones.forEach(z => {
+      if (!z.lat || !z.lon) return;
+      const hex = '#' + (z.fogColorHex & 0xFFFFFF).toString(16).padStart(6, '0');
+      const fog = L.circle([z.lat, z.lon], {
+        radius: z.fogRadius || 500,
+        color: hex,
+        weight: 0,
+        fillColor: hex,
+        fillOpacity: 0.08
+      });
+      fog.bindTooltip(`<b>${z.placeName}</b><br>Вайб: ${z.dominantVibe}`, { className: 'fog-tooltip', sticky: true });
+      mapFogGroup.addLayer(fog);
+    });
+  }
+
+  appState.signals.forEach(s => {
+    const hex = '#' + (s.colorHex & 0xFFFFFF).toString(16).padStart(6, '0');
+    const ageMinutes = (nowSec - (s.updatedAt || nowSec)) / 60.0;
+    const baseOpacity = s.isGhost ? Math.max(0.08, 0.22 - (ageMinutes * 0.002)) : Math.max(0.14, 0.38 - (ageMinutes * 0.015));
+
+    const halo = L.circle([s.lat, s.lon], {
+      radius: s.isGhost ? 220 : 190,
+      color: hex,
+      weight: s.isGhost ? 0.8 : 1.2,
+      dashArray: s.isGhost ? '5, 5' : null,
+      opacity: baseOpacity * 1.5,
+      fillColor: hex,
+      fillOpacity: baseOpacity
+    });
+
+    const core = L.circleMarker([s.lat, s.lon], {
+      radius: s.isGhost ? 5 : 8,
+      color: s.isGhost ? hex : '#FFFFFF',
+      weight: 1.5,
+      fillColor: hex,
+      fillOpacity: s.isGhost ? 0.6 : 0.95
+    });
+
+    halo.on('click', () => openPassport(s));
+    core.on('click', () => openPassport(s));
+
+    mapLayersGroup.addLayer(halo);
+    mapLayersGroup.addLayer(core);
+  });
+
+  appState.capsules.forEach(c => {
+    const isVen = c.isVenue;
+    const capColor = isVen ? '#38BDF8' : '#F59E0B';
+    const fillColor = isVen ? '#0284C7' : '#FBBF24';
+
+    const capCircle = L.circle([c.lat, c.lon], {
+      radius: isVen ? 150 : 110,
+      color: capColor,
+      weight: isVen ? 1.8 : 1.2,
+      dashArray: isVen ? null : '4, 4',
+      fillColor: fillColor,
+      fillOpacity: isVen ? 0.28 : 0.22
+    });
+
+    const capCore = L.circleMarker([c.lat, c.lon], {
+      radius: isVen ? 8 : 6,
+      color: '#FFF',
+      weight: 1.5,
+      fillColor: capColor,
+      fillOpacity: 1
+    });
+
+    const venueBadge = isVen ? `<span style="background:#0C4A6E; color:#38BDF8; padding:2px 6px; border-radius:4px; font-size:11px;">🏛️ ${c.venueName || 'Локация'}</span><br>` : '';
+    capCircle.bindPopup(`${venueBadge}<b>⏳ ${c.artist} — ${c.title}</b><br><i>«${c.secretMessage}»</i>`);
+
+    mapLayersGroup.addLayer(capCircle);
+    mapLayersGroup.addLayer(capCore);
+  });
+}
+
+function renderFeed() {
+  document.getElementById('tabAirBtn').innerText = `Эфир (${appState.signals.length})`;
+  document.getElementById('signalsFeed').innerHTML = appState.signals.map(s => `
+    <div class="card-sig" onclick='openPassport(${JSON.stringify(s)})' style="opacity:${s.isGhost ? 0.65 : 1.0}">
+      <div>
+        <div style="color:#${(s.colorHex & 0xFFFFFF).toString(16).padStart(6, '0')}; font-size:12px; font-weight:bold;">
+          ${s.personaTitle} ${s.isGhost ? '<span style="font-size:10px; color:#94A3B8;">• Призрачный след</span>' : ''}
+        </div>
+        <div style="font-weight:bold; font-size:14px;">${s.artist} — ${s.title}</div>
+        <div style="color:#94A3B8; font-size:11px;">${s.moodLabel} • ${s.zoneName}</div>
+      </div>
+      <div style="font-size:20px; color:#38BDF8;">→</div>
+    </div>
+  `).join('');
+
+  document.getElementById('capsulesFeed').innerHTML = appState.capsules.map(c => `
+    <div class="card-sig" style="border-color:${c.isVenue ? '#38BDF8' : '#F59E0B'}">
+      <div>
+        <div style="color:${c.isVenue ? '#38BDF8' : '#FBBF24'}; font-size:12px; font-weight:bold;">
+          ${c.isVenue ? '🏛️ ' + (c.venueName || 'Тайник заведения') : '⏳ ' + c.personaTitle} • ${c.zoneName}
+        </div>
+        <div style="font-weight:bold; font-size:14px;">${c.artist} — ${c.title}</div>
+        <div style="color:#E2E8F0; font-size:12px; font-style:italic;">«${c.secretMessage}»</div>
+      </div>
+      <a href="https://music.yandex.ru/search?text=${encodeURIComponent(c.artist + ' ' + c.title)}" target="_blank" style="color:${c.isVenue ? '#38BDF8' : '#FBBF24'}; text-decoration:none; font-size:18px;">▶</a>
+    </div>
+  `).join('');
+}
+
+function openPassport(sig) {
+  selectedSignal = sig;
+  const hex = '#' + (sig.colorHex & 0xFFFFFF).toString(16).padStart(6, '0');
+  document.getElementById('modalPersonaTitle').innerText = sig.personaTitle;
+  document.getElementById('modalPersonaTitle').style.color = hex;
+  document.getElementById('modalMood').innerText = `${sig.moodLabel} • Резонанс ${sig.compatibilityPercent}% • ${sig.zoneName}`;
+  document.getElementById('modalTrack').innerText = `${sig.artist} — ${sig.title}`;
+  document.getElementById('modalObs').innerText = `«${sig.personaObservation}»`;
+  document.getElementById('modalAvatar').style.background = `radial-gradient(circle, ${hex}, #0F172A)`;
+  document.getElementById('modalAvatar').style.borderColor = hex;
+  document.getElementById('modalListenLink').href = `https://music.yandex.ru/search?text=${encodeURIComponent(sig.artist + ' ' + sig.title)}`;
+  document.getElementById('passportModal').classList.add('active');
+
+  fetch('/api/bump_encounter', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ targetId: sig.id })
+  });
+}
+
+function closeModal(e) {
+  document.getElementById('passportModal').classList.remove('active');
+}
+
+async function sendReaction(symbol) {
+  if (!selectedSignal) return;
+  const target = selectedSignal;
+  closeModal();
+
+  showToast(`Отклик ${symbol} отправлен в эфир`, symbol);
+
+  try {
+    await fetch('/api/react', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ targetId: target.id, senderId: 'pwa_client', symbol: symbol })
+    });
+    fetchState();
+  } catch (e) {}
+}
+
+function openZonePicker() {
+  const z = prompt("Выберите зону (Вечерняя улица, Сретенка · Камерные бары, Парк Горького · Набережная, Покровка · Ночные кофейни):", currentZone);
+  if (z) {
+    currentZone = z;
+    document.getElementById('currentZoneText').innerText = z + ' ▾';
+    if (map) {
+      const coords = {
+        "Вечерняя улица": [55.7602, 37.6185],
+        "Сретенка · Камерные бары": [55.7685, 37.6324],
+        "Парк Горького · Набережная": [55.7294, 37.6022],
+        "Покровка · Ночные кофейни": [55.7588, 37.6482]
+      }[z] || [55.7558, 37.6176];
+      map.flyTo(coords, 14, { duration: 1.2 });
+    }
+  }
+}
+
+async function openDropModal() {
+  const msg = prompt("Анонимное послание для того, кто найдет этот трек:");
+  if (msg) {
+    await fetch('/api/drop_capsule', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        artist: 'Sirotkin', title: 'Август', zoneName: currentZone, secretMessage: msg
+      })
+    });
+    showToast("Тайник спрятан в зоне " + currentZone, "⏳");
+    fetchState();
+  }
+}
+
+function drawSonar() {
+  const w = canvas.width;
+  const h = canvas.height;
+  const cx = w / 2;
+  const cy = h / 2;
+  const maxR = Math.min(w, h) * 0.42;
+
+  ctx.clearRect(0, 0, w, h);
+
+  [0.3, 0.6, 0.9, 1.0].forEach(f => {
+    ctx.beginPath();
+    ctx.arc(cx, cy, maxR * f, 0, Math.PI * 2);
+    ctx.strokeStyle = '#1E293B';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  });
+
+  ctx.beginPath();
+  ctx.moveTo(cx - maxR, cy); ctx.lineTo(cx + maxR, cy);
+  ctx.moveTo(cx, cy - maxR); ctx.lineTo(cx, cy + maxR);
+  ctx.strokeStyle = 'rgba(30, 41, 59, 0.6)';
+  ctx.stroke();
+
+  sweepAngle = (sweepAngle + 0.8) % 360;
+  const rad = sweepAngle * Math.PI / 180;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy);
+  ctx.lineTo(cx + maxR * Math.cos(rad), cy + maxR * Math.sin(rad));
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  appState.signals.forEach(s => {
+    const sRad = (s.angleDegrees || 45) * Math.PI / 180;
+    const dist = (s.distanceRatio || 0.5) * maxR;
+    const sx = cx + dist * Math.cos(sRad);
+    const sy = cy + dist * Math.sin(sRad);
+    const hex = '#' + (s.colorHex & 0xFFFFFF).toString(16).padStart(6, '0');
+
+    ctx.save();
+    if (s.isGhost) {
+      ctx.globalAlpha = 0.45;
+    }
+
+    ctx.beginPath();
+    ctx.arc(sx, sy, s.isGhost ? 8 : 12, 0, Math.PI * 2);
+    ctx.fillStyle = hex;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(sx, sy, s.isGhost ? 2 : 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fill();
+    ctx.restore();
+  });
+
+  appState.capsules.forEach(c => {
+    const cRad = (c.angleDegrees || 120) * Math.PI / 180;
+    const dist = (c.distanceRatio || 0.6) * maxR;
+    const cxPos = cx + dist * Math.cos(cRad);
+    const cyPos = cy + dist * Math.sin(cRad);
+
+    ctx.fillStyle = c.isVenue ? '#38BDF8' : '#F59E0B';
+    ctx.beginPath();
+    ctx.moveTo(cxPos, cyPos - 9);
+    ctx.lineTo(cxPos + 9, cyPos);
+    ctx.lineTo(cxPos, cyPos + 9);
+    ctx.lineTo(cxPos - 9, cyPos);
+    ctx.closePath();
+    ctx.fill();
+  });
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+  ctx.fillStyle = '#38BDF8';
+  ctx.fill();
+
+  requestAnimationFrame(drawSonar);
+}
+
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const clickX = (e.clientX - rect.left) * scaleX;
+  const clickY = (e.clientY - rect.top) * scaleY;
+
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const maxR = Math.min(canvas.width, canvas.height) * 0.42;
+
+  for (const s of appState.signals) {
+    const sRad = (s.angleDegrees || 45) * Math.PI / 180;
+    const dist = (s.distanceRatio || 0.5) * maxR;
+    const sx = cx + dist * Math.cos(sRad);
+    const sy = cy + dist * Math.sin(sRad);
+    if (Math.hypot(clickX - sx, clickY - sy) <= 30 * window.devicePixelRatio) {
+      openPassport(s);
+      return;
+    }
+  }
+});
+
+fetchState();
+setInterval(fetchState, 2500);
+drawSonar();
+</script>
+</body>
+</html>
