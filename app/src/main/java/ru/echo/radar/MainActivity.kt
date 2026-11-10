@@ -1224,6 +1224,9 @@ fun VinylCityMapCanvas(
                     )
                 }
 
+                // Mini Vinyl Disc
+                val discRadius = (if (isFocused) 16.dp else if (isPc) 14.dp else 12.dp).toPx()
+
                 // Active Sonar Focus Ring Pulse (когда нажат «Фокус» в верхней плашке)
                 if (sonarFocusTargetId == vinyl.id) {
                     drawCircle(
@@ -1239,9 +1242,6 @@ fun VinylCityMapCanvas(
                         style = Stroke(width = 0.9.dp.toPx())
                     )
                 }
-
-                // Mini Vinyl Disc
-                val discRadius = (if (isFocused) 16.dp else if (isPc) 14.dp else 12.dp).toPx()
                 drawCircle(color = Color(0xFF141720), radius = discRadius, center = pos)
                 drawCircle(
                     color = if (isFocused) vinylBaseColor else Color(0xFF2D3748),
