@@ -44,6 +44,18 @@
   </div>
 
   <div class="grid">
+    <div class="card" style="border: 1px solid #1E293B; background: rgba(15, 23, 42, 0.7);">
+      <h3>✦ Отправить атмосферный импульс в эфир</h3>
+      <p class="meta">Нажмите глиф, чтобы послать тихий световой отклик на радар смартфона и всем слушателям в городе:</p>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;">
+        <button onclick="sendImpulse('✦')" style="background:#0F172A; border:1px solid #00F0FF; color:#00F0FF; padding:8px 14px; border-radius:10px; cursor:pointer; font-weight:bold;">✦ Резонанс</button>
+        <button onclick="sendImpulse('✨')" style="background:#0F172A; border:1px solid #A855F7; color:#A855F7; padding:8px 14px; border-radius:10px; cursor:pointer; font-weight:bold;">✨ Созвучие</button>
+        <button onclick="sendImpulse('🌙')" style="background:#0F172A; border:1px solid #38BDF8; color:#38BDF8; padding:8px 14px; border-radius:10px; cursor:pointer; font-weight:bold;">🌙 Ночь</button>
+        <button onclick="sendImpulse('🌲')" style="background:#0F172A; border:1px solid #10B981; color:#10B981; padding:8px 14px; border-radius:10px; cursor:pointer; font-weight:bold;">🌲 Туман</button>
+        <button onclick="sendImpulse('⚡')" style="background:#0F172A; border:1px solid #FFB800; color:#FFB800; padding:8px 14px; border-radius:10px; cursor:pointer; font-weight:bold;">⚡ Искра</button>
+      </div>
+    </div>
+
     <div class="card">
       <h3>✨ Интеллектуальный ИИ-Куратор</h3>
       <p class="meta">Подключите бесплатный ключ Gemini API, чтобы литературные образы создавались живым интеллектом без шаблонных штампов.</p>
@@ -102,6 +114,19 @@ function showToast(text, symbol = '✦') {
   toastTimeout = setTimeout(() => {
     toast.classList.remove('visible');
   }, 3200);
+}
+
+async function sendImpulse(symbol) {
+  showToast('Импульс ' + symbol + ' отправлен в эфир!', symbol);
+  try {
+    await fetch('/api/react', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ targetId: 'broadcast', senderId: 'pc_studio_node', symbol: symbol })
+    });
+  } catch (e) {
+    console.error('sendImpulse error:', e);
+  }
 }
 
 async function loadStatus() {
