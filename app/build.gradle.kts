@@ -64,4 +64,7 @@ dependencies {
 
     // DataStore для хранения настроек (адрес сервера)
     implementation("androidx.datastore:datastore-preferences:1.1.1")
+
+    // Coil для загрузки обложек треков
+    implementation("io.coil-kt:coil-compose:2.6.0")
 }
