@@ -152,7 +152,7 @@ fun EchoCapsule.toVinylTrack(): VinylTrack = VinylTrack(
 // -------------------------------------------------------------
 // MAIN SCREEN: VINYL CITY MAP + TACTILE TURNTABLE DECK
 // -------------------------------------------------------------
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun VinylCityMainScreen() {
     val context = LocalContext.current
@@ -1210,7 +1210,7 @@ fun TurntableDeckView(
                     } else {
                         // Generative Stylized Label
                         Column(
-                            horizontalAlignment = Alignment.CenterVertically,
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
                             Text(
@@ -1374,7 +1374,7 @@ fun TurntableDeckView(
                     ) {
                         Column(
                             modifier = Modifier.padding(vertical = 6.dp),
-                            horizontalAlignment = Alignment.CenterVertically,
+                            horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center
                         ) {
                             Text(text = glyph, color = glyphColor, fontSize = 16.sp)
@@ -1479,7 +1479,7 @@ fun openMusicApp(context: Context, artist: String, title: String, sourceApp: Str
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
         }
         context.startActivity(intent)
-    } catch (_: Exception) {
+    } catch (e: Exception) {
         // Fallback to browser search
         try {
             val webUri = Uri.parse("https://www.google.com/search?q=" + URLEncoder.encode("$query слушать", "UTF-8"))
@@ -1487,6 +1487,6 @@ fun openMusicApp(context: Context, artist: String, title: String, sourceApp: Str
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK
             }
             context.startActivity(browserIntent)
-        } catch (_: Exception) {}
+        } catch (e: Exception) {}
     }
 }
