@@ -9,6 +9,7 @@
         android:allowBackup="true"
         android:label="ЭХО"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
 
         <activity
