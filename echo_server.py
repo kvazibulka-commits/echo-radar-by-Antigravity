@@ -785,15 +785,28 @@ def build_state_payload(for_device_id: str = None):
 
         active_banner = None
         for r in reversed(reactions_snapshot):
-            if now_sec - r["time"] < 14.0:
-                active_banner = {
-                    "id": r["id"],
-                    "targetId": r["targetId"],
-                    "senderId": r["senderId"],
-                    "symbol": r["symbol"],
-                    "message": r["message"]
-                }
-                break
+            if now_sec - r["time"] < 30.0:
+                if for_device_id:
+                    if r.get("targetId") == for_device_id:
+                        active_banner = {
+                            "id": r["id"],
+                            "targetId": r["targetId"],
+                            "senderId": r["senderId"],
+                            "symbol": r["symbol"],
+                            "message": r["message"],
+                            "time": r["time"]
+                        }
+                        break
+                else:
+                    active_banner = {
+                        "id": r["id"],
+                        "targetId": r["targetId"],
+                        "senderId": r["senderId"],
+                        "symbol": r["symbol"],
+                        "message": r["message"],
+                        "time": r["time"]
+                    }
+                    break
 
         my_reactions = {}
         my_refined_mood = ""
@@ -899,7 +912,9 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
         path = parsed.path
 
         if path == "/api/state":
-            self._send_json(build_state_payload())
+            query = urllib.parse.parse_qs(parsed.query)
+            dev_id = query.get("deviceId", [None])[0] or self.headers.get("X-Device-Id")
+            self._send_json(build_state_payload(for_device_id=dev_id))
         elif path in ("/", "/index.html"):
             self._send_html(DASHBOARD_HTML)
         elif path in ("/app", "/pwa"):
