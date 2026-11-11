@@ -57,6 +57,7 @@ FILES_TO_COMMIT = [
     "tests/test_echo_server.py",
     "tools/smoke_test.py",
     "tools/cdp_shot.py",
+    "tools/publish_release.py",
     "docs/screenshots/dashboard.png",
     "docs/screenshots/pwa-sonar.png",
     "docs/screenshots/pwa-air.png",
