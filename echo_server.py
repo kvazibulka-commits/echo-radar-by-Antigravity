@@ -129,6 +129,198 @@ RECENT_REACTIONS = []
 DEVICE_COVERS = {}
 _PERSONA_EXECUTOR = None
 
+# --- АРГОН & CHATGPT: ИНТЕРАКТИВНЫЙ ЭФИР ---
+NEEDLE_SYNCS = {}      # senderId -> {"targetId": str, "time": float}
+THERMAL_PATCHES = []   # [{"id": str, "targetId": str, "senderId": str, "x": float, "y": float, "time": float}]
+
+# --- CHATGPT: МАТЕМАТИЧЕСКАЯ МОДЕЛЬ РЕЗОНАНСА & SERENDIPITY ENGINE ---
+CAMELOT_INDEX = {
+    "1A": 1, "2A": 2, "3A": 3, "4A": 4, "5A": 5, "6A": 6,
+    "7A": 7, "8A": 8, "9A": 9, "10A": 10, "11A": 11, "12A": 12,
+    "1B": 1, "2B": 2, "3B": 3, "4B": 4, "5B": 5, "6B": 6,
+    "7B": 7, "8B": 8, "9B": 9, "10B": 10, "11B": 11, "12B": 12,
+}
+
+CULTURAL_BRIDGES = {
+    frozenset(["synth-pop", "minimal-techno"]): (0.92, "Аналоговые секвенции и ритмический минимализм"),
+    frozenset(["post-punk", "shoegaze"]): (0.95, "Стена гитарного ревербера и меланхоличный бас"),
+    frozenset(["indie", "dream-pop"]): (0.91, "Двойной винтажный хорус и теплая ностальгия"),
+    frozenset(["lo-fi", "trip-hop"]): (0.94, "Виниловый кракелюр и ломаный ночной бит"),
+    frozenset(["ambient", "drone"]): (0.96, "Медитативное звуковое полотно без границ"),
+    frozenset(["synth-pop", "post-punk"]): (0.88, "Холодные синтезаторные линии советской и берлинской волны"),
+    frozenset(["indie", "post-punk"]): (0.85, "Сырой перегруз пустых городских переулков"),
+    frozenset(["techno", "ambient"]): (0.87, "Глубокая пространственная гипнопедия"),
+}
+
+def calculate_tempo_harmonic(bpm_a: float, bpm_b: float, sigma: float = 0.15) -> float:
+    """ChatGPT: Октавная гармоническая совместимость темпа T_AB."""
+    if bpm_a <= 0 or bpm_b <= 0:
+        return 0.75
+    log_ratio = math.log2(bpm_a / bpm_b)
+    best = 0.0
+    for n in (-1, 0, 1):
+        val = math.exp(-((log_ratio - n) ** 2) / (2.0 * sigma * sigma))
+        if val > best:
+            best = val
+    return round(best, 3)
+
+def calculate_camelot_harmonic(k_a: str, k_b: str) -> float:
+    """ChatGPT: Гармоническая совместимость по Camelot Wheel K_AB."""
+    k_a = (k_a or "").strip().upper()
+    k_b = (k_b or "").strip().upper()
+    if not k_a or not k_b:
+        return 0.80
+    if k_a == k_b:
+        return 1.0
+    num_a = CAMELOT_INDEX.get(k_a, 8)
+    num_b = CAMELOT_INDEX.get(k_b, 8)
+    letter_a = k_a[-1] if k_a[-1] in ("A", "B") else "A"
+    letter_b = k_b[-1] if k_b[-1] in ("A", "B") else "A"
+
+    if num_a == num_b and letter_a != letter_b:
+        return 0.95
+
+    diff = abs(num_a - num_b)
+    circle_dist = min(diff, 12 - diff)
+
+    if letter_a == letter_b:
+        if circle_dist == 1:
+            return 0.90
+        elif circle_dist == 2:
+            return 0.65
+        elif circle_dist == 3:
+            return 0.45
+        else:
+            return 0.25
+    else:
+        if circle_dist == 1:
+            return 0.75
+        else:
+            return 0.30
+
+def calculate_mood_vector(v_a: float, a_a: float, v_b: float, a_b: float, sigma: float = 0.35) -> float:
+    """ChatGPT: Эмоциональный вектор Valence & Energy M_AB."""
+    dist_sq = ((v_a - v_b) ** 2) + ((a_a - a_b) ** 2)
+    return round(math.exp(-0.5 * dist_sq / (sigma * sigma)), 3)
+
+def calculate_serendipity_engine(genre_a: str, genre_b: str, base_sim: float) -> tuple[float, str]:
+    """ChatGPT: Serendipity Engine через граф культурных мостов S_AB."""
+    ga = (genre_a or "indie").lower().strip()
+    gb = (genre_b or "indie").lower().strip()
+    if ga == gb:
+        return 0.0, ""
+    key = frozenset([ga, gb])
+    if key in CULTURAL_BRIDGES:
+        bridge_score, bridge_desc = CULTURAL_BRIDGES[key]
+        u_pair = 0.85
+        return u_pair * bridge_score * base_sim, bridge_desc
+    for pair_set, (bridge_score, bridge_desc) in CULTURAL_BRIDGES.items():
+        items = list(pair_set)
+        if (items[0] in ga or ga in items[0]) and (items[1] in gb or gb in items[1]):
+            u_pair = 0.80
+            return u_pair * bridge_score * base_sim, bridge_desc
+        if (items[1] in ga or ga in items[1]) and (items[0] in gb or gb in items[0]):
+            u_pair = 0.80
+            return u_pair * bridge_score * base_sim, bridge_desc
+    return 0.0, ""
+
+def infer_track_acoustics(artist: str, title: str, mood_label: str = "") -> dict:
+    """Вычисляет акустический профиль трека (BPM, Camelot, Mood, Genre) по имени и настроению."""
+    seed_str = f"{artist.lower().strip()}|{title.lower().strip()}"
+    h = int(hashlib.sha256(seed_str.encode("utf-8")).hexdigest()[:8], 16)
+
+    bpm_pool = [72, 80, 85, 92, 100, 110, 118, 120, 124, 128, 132, 140]
+    bpm = bpm_pool[h % len(bpm_pool)]
+
+    cam_num = (h % 12) + 1
+    cam_letter = "A" if ((h >> 4) % 3 != 0) else "B"
+    camelot_key = f"{cam_num}{cam_letter}"
+
+    valence = round(0.20 + (((h >> 8) % 60) / 100.0), 2)
+    energy = round(0.30 + (((h >> 14) % 65) / 100.0), 2)
+
+    art_l = artist.lower()
+    tit_l = title.lower()
+    mood_l = mood_label.lower()
+    if any(w in art_l or w in mood_l for w in ["молчат дома", "ploho", "пост-панк", "post-punk", "дурной"]):
+        genre = "post-punk"
+        bpm = 140
+        camelot_key = "9A"
+        valence = 0.28
+        energy = 0.74
+    elif any(w in art_l or w in mood_l for w in ["sirotkin", "сироткин", "август", "теплый винил", "инди"]):
+        genre = "indie"
+        bpm = 118
+        camelot_key = "8B"
+        valence = 0.42
+        energy = 0.54
+    elif any(w in art_l or w in mood_l for w in ["pompeya", "дрим", "dream"]):
+        genre = "dream-pop"
+        bpm = 120
+        camelot_key = "8A"
+        valence = 0.65
+        energy = 0.60
+    elif any(w in art_l or w in mood_l for w in ["burial", "трип-хоп", "trip-hop", "lo-fi", "лоу-фай"]):
+        genre = "trip-hop"
+        bpm = 70
+        camelot_key = "8A"
+        valence = 0.30
+        energy = 0.48
+    elif any(w in art_l or w in mood_l for w in ["техно", "techno", "minimal"]):
+        genre = "minimal-techno"
+        bpm = 124
+        camelot_key = "8A"
+        valence = 0.35
+        energy = 0.82
+    elif any(w in art_l or w in mood_l for w in ["синт", "synth"]):
+        genre = "synth-pop"
+        bpm = 120
+        camelot_key = "8A"
+        valence = 0.50
+        energy = 0.68
+    else:
+        genre = "indie"
+
+    return {
+        "bpm": bpm,
+        "camelotKey": camelot_key,
+        "valence": valence,
+        "energy": energy,
+        "genre": genre
+    }
+
+def calculate_full_resonance(track_a: dict, track_b: dict) -> tuple[int, str]:
+    """Итоговый расчет резонанса по формуле ChatGPT: R_AB = 100 * [ B_AB + lambda*(1-B_AB)*S_AB ]."""
+    k_ab = calculate_camelot_harmonic(track_a.get("camelotKey", "8A"), track_b.get("camelotKey", "8A"))
+    t_ab = calculate_tempo_harmonic(float(track_a.get("bpm", 120)), float(track_b.get("bpm", 120)))
+    w_ab = 0.84
+    m_ab = calculate_mood_vector(
+        float(track_a.get("valence", 0.4)), float(track_a.get("energy", 0.5)),
+        float(track_b.get("valence", 0.4)), float(track_b.get("energy", 0.5))
+    )
+    e_ab = 0.86
+
+    b_ab = (0.15 * k_ab) + (0.10 * t_ab) + (0.25 * w_ab) + (0.15 * m_ab) + (0.35 * e_ab)
+
+    s_ab, bridge_desc = calculate_serendipity_engine(
+        track_a.get("genre", "indie"), track_b.get("genre", "indie"), b_ab
+    )
+
+    lambda_factor = 0.25
+    r_ab = 100.0 * (b_ab + lambda_factor * (1.0 - b_ab) * s_ab)
+    final_compat = int(min(99, max(58, round(r_ab))))
+
+    if bridge_desc:
+        story = f"Культурный мост ({bridge_desc}): октавный резонанс {int(track_a.get('bpm', 120))}/{int(track_b.get('bpm', 120))} BPM."
+    elif final_compat >= 88:
+        story = f"Редкое созвучие Camelot ({track_a.get('camelotKey', '8A')} ↔ {track_b.get('camelotKey', '8A')}) и фазовый синхрон темпа."
+    elif final_compat >= 75:
+        story = "Тёплый вечерний резонанс: ваши звуковые спектры пересеклись в этой точке города."
+    else:
+        story = "Случайная встреча контрастов в ночном эфире."
+
+    return final_compat, story
+
 ZONE_COORDINATES = {
     "Вечерняя улица": (55.7602, 37.6185),            # Камергерский / Кузнецкий Мост
     "Сретенка · Камерные бары": (55.7685, 37.6324),   # Переулки Сретенки
@@ -681,10 +873,19 @@ def build_state_payload(for_device_id: str = None):
         zone_buckets = {}
         my_device_record = None
 
+        for r_item in dev_rows:
+            if for_device_id and r_item["id"] == for_device_id:
+                my_device_record = r_item
+                break
+
+        my_acoustics = infer_track_acoustics(
+            my_device_record["artist"], my_device_record["title"], my_device_record["mood_label"]
+        ) if my_device_record else None
+
         for row in dev_rows:
             dev_id = row["id"]
             if for_device_id and dev_id == for_device_id:
-                my_device_record = row
+                continue
 
             try:
                 reactions = json.loads(row["reactions_json"] or "{}")
@@ -696,14 +897,14 @@ def build_state_payload(for_device_id: str = None):
             age_min = max(0, int((now_sec - updated_at) / 60.0))
             is_ghost = age_min > 5
 
-            compat_num = int(row["compatibility_percent"] or 88)
-            encounters_num = int(row["encounters_count"] or 1)
-            if compat_num >= 85:
-                res_story = "Редкое созвучие: вы оба растворяетесь в одном звуковом спектре."
-            elif compat_num >= 70:
-                res_story = "Тёплый вечерний резонанс: ваши звуковые траектории пересеклись в этой точке города."
+            other_acoustics = infer_track_acoustics(row["artist"], row["title"], row["mood_label"])
+            if my_acoustics:
+                compat_num, res_story = calculate_full_resonance(my_acoustics, other_acoustics)
             else:
-                res_story = "Случайная встреча контрастов в ночном эфире."
+                compat_num = int(row["compatibility_percent"] or 88)
+                res_story = "Тёплый вечерний резонанс: ваши звуковые траектории пересеклись в этой точке города."
+
+            encounters_num = int(row["encounters_count"] or 1)
             if encounters_num > 1:
                 res_story += f" Ваши волны встречаются уже {encounters_num}-й раз за неделю."
 
@@ -722,7 +923,10 @@ def build_state_payload(for_device_id: str = None):
                     if is_ghost else (row["persona_observation"] or "Слушает музыку в вечерней тишине.")
                 ),
                 "moodLabel": (f"Призрачный след ({age_min} мин)" if is_ghost else (row["mood_label"] or "Теплый винил")),
-                "compatibilityPercent": int(row["compatibility_percent"] or 88),
+                "compatibilityPercent": compat_num,
+                "bpm": other_acoustics["bpm"],
+                "camelotKey": other_acoustics["camelotKey"],
+                "genre": other_acoustics["genre"],
                 "resonanceDays": int(row["resonance_days"] or 1),
                 "encountersCount": int(row["encounters_count"] or 1),
                 "colorHex": ensure_opaque_color(int(row["color_hex"] or 0xFF38BDF8)),
@@ -881,6 +1085,52 @@ def build_state_payload(for_device_id: str = None):
                     "time": r.get("time", now_sec)
                 })
 
+    # 6. АРГОН: Точка Лагранжа (Акустическое затмение при 3+ созвучных слушателях в квартале)
+    lagrange_point = None
+    eligible_for_lagrange = [s for s in signals if not s.get("isGhost") and s.get("compatibilityPercent", 0) >= 75]
+    if len(eligible_for_lagrange) >= 3:
+        triplet = eligible_for_lagrange[:3]
+        avg_ang = sum(t["angleDegrees"] for t in triplet) / 3.0
+        avg_rat = sum(t["distanceRatio"] for t in triplet) / 3.0
+        lagrange_point = {
+            "active": True,
+            "angleDegrees": round(avg_ang, 1),
+            "distanceRatio": round(avg_rat, 2),
+            "secretTrack": "Burial — Archangel (Nocturnal Re-edit)",
+            "secretMessage": "Акустическое затмение: три ночных слушателя образовали Точку Лагранжа.",
+            "participants": [t["id"] for t in triplet]
+        }
+
+    # 7. АРГОН: Активные тепловые пятна (Призрачное тепло / дыхание на стекле)
+    active_thermal_patches = []
+    for p in list(THERMAL_PATCHES):
+        age = now_sec - p["time"]
+        if age <= 15.0:
+            if not for_device_id or p["targetId"] in (for_device_id, "") or p["senderId"] == for_device_id:
+                active_thermal_patches.append({
+                    "id": p["id"],
+                    "targetId": p["targetId"],
+                    "senderId": p["senderId"],
+                    "x": p["x"],
+                    "y": p["y"],
+                    "ageSec": round(age, 1)
+                })
+
+    THERMAL_PATCHES[:] = [p for p in THERMAL_PATCHES if (now_sec - p["time"]) <= 15.0]
+
+    # 8. АРГОН: Синхронизированные иглы (Drop-in синхрон)
+    needle_synced_targets = []
+    for s_id, s_info in list(NEEDLE_SYNCS.items()):
+        if now_sec - s_info["time"] <= 60.0:
+            if s_id == for_device_id:
+                needle_synced_targets.append(s_info["targetId"])
+            elif s_info["targetId"] == for_device_id:
+                needle_synced_targets.append(s_id)
+
+    # 9. АРГОН: Шум рассвета (Dawn Noise) с 4:00 до 6:00
+    now_hour = datetime.now().hour
+    is_dawn_mode = (4 <= now_hour < 6)
+
     return {
         "status": "ok",
         "serverTime": int(now_sec),
@@ -894,7 +1144,11 @@ def build_state_payload(for_device_id: str = None):
         "myRefinedMood": my_refined_mood,
         "myCuratedPersona": my_curated_persona,
         "myCuratedObservation": my_curated_obs,
-        "myColorHex": my_color_hex
+        "myColorHex": my_color_hex,
+        "lagrangePoint": lagrange_point,
+        "thermalPatches": active_thermal_patches,
+        "needleSyncedTargets": needle_synced_targets,
+        "isDawnMode": is_dawn_mode
     }
 
 
@@ -1202,6 +1456,56 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
                 conn.close()
             logger.info("🤝 ПЕРЕСЕЧЕНИЕ с %s зафиксировано в SQLite", target_id)
             self._send_json(build_state_payload(for_device_id=sender_id))
+
+        elif path == "/api/needle_sync":
+            target_id = str(data.get("targetId") or "")
+            sender_id = str(data.get("senderId") or "anon")
+            now_ts = time.time()
+            NEEDLE_SYNCS[sender_id] = {"targetId": target_id, "time": now_ts}
+            with REACTIONS_LOCK:
+                RECENT_REACTIONS.append({
+                    "id": int(now_ts * 1000),
+                    "targetId": target_id,
+                    "senderId": sender_id,
+                    "symbol": "∿",
+                    "message": "Кто-то встал рядом и слушает с тобой (Синхронизация иглы)",
+                    "time": now_ts
+                })
+            logger.info("🪡 СИНХРОНИЗАЦИЯ ИГЛЫ: %s -> %s", sender_id, target_id)
+            self._send_json({"status": "ok", "synced": True, "targetId": target_id})
+
+        elif path == "/api/send_warmth":
+            target_id = str(data.get("targetId") or "")
+            sender_id = str(data.get("senderId") or "anon")
+            patch_x = float(data.get("x", 0.5))
+            patch_y = float(data.get("y", 0.5))
+            p_id = f"warmth_{int(time.time() * 1000)}"
+            THERMAL_PATCHES.append({
+                "id": p_id,
+                "targetId": target_id,
+                "senderId": sender_id,
+                "x": patch_x,
+                "y": patch_y,
+                "time": time.time()
+            })
+            logger.info("♨️ ТЕПЛОВОЙ СЛЕД от %s в точке (%.2f, %.2f)", sender_id, patch_x, patch_y)
+            self._send_json({"status": "ok", "patchId": p_id})
+
+        elif path == "/api/wave_impulse":
+            target_id = str(data.get("targetId") or "")
+            sender_id = str(data.get("senderId") or "anon")
+            now_ts = time.time()
+            with REACTIONS_LOCK:
+                RECENT_REACTIONS.append({
+                    "id": int(now_ts * 1000),
+                    "targetId": target_id,
+                    "senderId": sender_id,
+                    "symbol": "🌊",
+                    "message": "Звуковой импульс сквозь ночной эфир (Камень в воду)",
+                    "time": now_ts
+                })
+            logger.info("🌊 ИМПУЛЬС ВОЛНЫ от %s -> %s", sender_id, target_id)
+            self._send_json({"status": "ok"})
 
         elif path == "/api/delete_signal":
             target_id = str(data.get("targetId") or data.get("id") or "")

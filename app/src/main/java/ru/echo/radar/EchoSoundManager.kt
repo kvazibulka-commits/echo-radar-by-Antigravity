@@ -3,6 +3,7 @@ package ru.echo.radar
 import android.content.Context
 import android.media.AudioAttributes
 import android.media.SoundPool
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -33,6 +34,7 @@ object EchoSoundManager {
     private var sonarSoundId = 0
     private var unlockSoundId = 0
     private var tickSoundId = 0
+    private var waveSoundId = 0
     private var isLoaded = false
 
     fun init(context: Context) {
@@ -45,7 +47,7 @@ object EchoSoundManager {
             .build()
 
         soundPool = SoundPool.Builder()
-            .setMaxStreams(4)
+            .setMaxStreams(5)
             .setAudioAttributes(audioAttributes)
             .build()
 
@@ -73,11 +75,17 @@ object EchoSoundManager {
                     writeWav(tickFile, generateTickPcm())
                 }
 
+                val waveFile = File(soundDir, "wave_pulse.wav")
+                if (!waveFile.exists()) {
+                    writeWav(waveFile, generateWavePulsePcm())
+                }
+
                 soundPool?.let { pool ->
                     needleSoundId = pool.load(needleFile.absolutePath, 1)
                     sonarSoundId = pool.load(sonarFile.absolutePath, 1)
                     unlockSoundId = pool.load(unlockFile.absolutePath, 1)
                     tickSoundId = pool.load(tickFile.absolutePath, 1)
+                    waveSoundId = pool.load(waveFile.absolutePath, 1)
                     isLoaded = true
                 }
             } catch (e: Exception) {
@@ -104,6 +112,42 @@ object EchoSoundManager {
     fun playTick(volume: Float = 0.3f) {
         if (!isLoaded || soundPool == null) return
         soundPool?.play(tickSoundId, volume, volume, 1, 0, 1.0f)
+    }
+
+    fun playWavePulse(volume: Float = 0.5f) {
+        if (!isLoaded || soundPool == null) return
+        soundPool?.play(waveSoundId, volume, volume, 1, 0, 1.0f)
+    }
+
+    /**
+     * Тактильный пульс сердца (Heartbeat) по концепции Аргона:
+     * Двойной импульс [80ms, пауза 100ms, 120ms] для Синхронизации иглы (Needle Sync)
+     */
+    fun triggerHeartbeatVibration(context: Context) {
+        try {
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? android.os.VibratorManager
+                vm?.defaultVibrator
+            } else {
+                @Suppress("DEPRECATION")
+                context.getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+            }
+
+            val pattern = longArrayOf(0, 80, 100, 120)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val amplitudes = intArrayOf(0, 190, 0, 255)
+                try {
+                    vibrator?.vibrate(android.os.VibrationEffect.createWaveform(pattern, amplitudes, -1))
+                } catch (_: Exception) {
+                    vibrator?.vibrate(android.os.VibrationEffect.createWaveform(pattern, -1))
+                }
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(pattern, -1)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Heartbeat vibration failed: ${e.message}")
+        }
     }
 
     // --- PROCEDURAL AUDIO PCM GENERATORS ---
@@ -167,6 +211,22 @@ object EchoSoundManager {
             val envelope = exp(-t * 220.0)
             val tone = sin(2.0 * PI * 1200.0 * t) * envelope * 18000.0
             pcm[i] = tone.coerceIn(-32767.0, 32767.0).toInt().toShort()
+        }
+        return pcm
+    }
+
+    // 5. Resonant water droplet pulse for "Камень в воду" (~180ms)
+    private fun generateWavePulsePcm(): ShortArray {
+        val durationMs = 180
+        val numSamples = (SAMPLE_RATE * durationMs) / 1000
+        val pcm = ShortArray(numSamples)
+        for (i in 0 until numSamples) {
+            val t = i.toDouble() / SAMPLE_RATE
+            val envelope = exp(-t * 22.0)
+            val freq = 520.0 + (t / 0.18) * 260.0
+            val tone = sin(2.0 * PI * freq * t) * 0.8 + sin(2.0 * PI * (freq * 2.0) * t) * 0.2
+            val sample = tone * envelope * 24000.0
+            pcm[i] = sample.coerceIn(-32767.0, 32767.0).toInt().toShort()
         }
         return pcm
     }

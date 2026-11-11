@@ -28,6 +28,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -47,6 +48,7 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.net.URLEncoder
+import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -56,6 +58,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         EchoStateRepository.init(this)
         EchoSoundManager.init(this)
+        EchoBleManager.init(this)
+        EchoBleManager.startScanning(this)
         setContent {
             EchoRadarTheme {
                 Surface(
@@ -70,6 +74,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        EchoBleManager.stopScanning()
+        EchoBleManager.stopAdvertising()
         EchoAudioPlayer.stop()
     }
 }
@@ -112,7 +118,10 @@ data class VinylTrack(
     val venueName: String = "",
     val minResonance: Int = 0,
     val secretPerk: String = "",
-    val isUnlocked: Boolean = true
+    val isUnlocked: Boolean = true,
+    val bpm: Int = 120,
+    val camelotKey: String = "8A",
+    val genre: String = "indie"
 )
 
 fun PlayingTrack.toVinylTrack(): VinylTrack = VinylTrack(
@@ -128,7 +137,10 @@ fun PlayingTrack.toVinylTrack(): VinylTrack = VinylTrack(
     angleDeg = 0f,
     ringFactor = 0f,
     colorHex = 0xFF00F0FFL,
-    isSelf = true
+    isSelf = true,
+    bpm = 120,
+    camelotKey = "8A",
+    genre = "indie"
 )
 
 fun NearbyEchoSignal.toVinylTrack(): VinylTrack = VinylTrack(
@@ -145,7 +157,10 @@ fun NearbyEchoSignal.toVinylTrack(): VinylTrack = VinylTrack(
     ringFactor = ringFactor,
     colorHex = colorHex,
     isGhost = isGhost,
-    coverUrl = coverUrl
+    coverUrl = coverUrl,
+    bpm = bpm,
+    camelotKey = camelotKey,
+    genre = genre
 )
 
 fun EchoCapsule.toVinylTrack(): VinylTrack = VinylTrack(
@@ -186,6 +201,12 @@ fun VinylCityMainScreen() {
     val incomingReaction by EchoStateRepository.incomingReaction.collectAsState()
     val serverHost by EchoStateRepository.serverHost.collectAsState()
 
+    // АРГОН & CHATGPT: Состояния сенсорного купола ночи
+    val thermalPatches by EchoStateRepository.thermalPatches.collectAsState()
+    val needleSyncedTargets by EchoStateRepository.needleSyncedTargets.collectAsState()
+    val lagrangePoint by EchoStateRepository.lagrangePoint.collectAsState()
+    val isDawnMode by EchoStateRepository.isDawnMode.collectAsState()
+
     // Audio preview player states
     val isAudioPlaying by EchoAudioPlayer.isPlaying.collectAsState()
     val isAudioLoading by EchoAudioPlayer.isLoading.collectAsState()
@@ -213,6 +234,7 @@ fun VinylCityMainScreen() {
     }
 
     val activeTrack = selectedVinyl ?: currentPlayingTrack.toVinylTrack()
+    val isNeedleSynced = needleSyncedTargets.contains(activeTrack.id)
 
     // Active Album Artwork and Audio Preview URL loaded via iTunes Search API
     var trackMediaInfo by remember { mutableStateOf(TrackMediaInfo()) }
@@ -240,6 +262,7 @@ fun VinylCityMainScreen() {
     var showCuratorObservationDialog by remember { mutableStateOf(false) }
     var showCoverZoomDialog by remember { mutableStateOf(false) }
     var showChronicleDialog by remember { mutableStateOf(false) }
+    var showLagrangeDialog by remember { mutableStateOf(false) }
     var hasSentThankYouToTarget by remember { mutableStateOf<String?>(null) }
 
     // Feedback toast for reactions sent
@@ -392,6 +415,10 @@ fun VinylCityMainScreen() {
                 VinylCityMapCanvas(
                     allVinyls = allVinyls,
                     selectedVinyl = selectedVinyl,
+                    thermalPatches = thermalPatches,
+                    needleSyncedTargets = needleSyncedTargets,
+                    lagrangePoint = lagrangePoint,
+                    isDawnMode = isDawnMode,
                     neonPulse = neonPulse,
                     laserPhotonProgress = laserPhotonProgress,
                     onVinylSelected = { vinyl ->
@@ -404,12 +431,33 @@ fun VinylCityMainScreen() {
                         selectedVinyl = vinyl
                         manualSpinning = true
                     },
+                    onVinylLongClicked = { vinyl ->
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        EchoSoundManager.triggerHeartbeatVibration(context)
+                        EchoSoundManager.playNeedleDrop()
+                        selectedVinyl = vinyl
+                        EchoStateRepository.syncNeedle(vinyl.id)
+                        EchoAudioPlayer.toggle(vinyl.artist, vinyl.title, trackMediaInfo.previewAudioUrl)
+                        reactionSentFeedback = "🪡 Синхронизация иглы: Вы слушаете вместе ✨"
+                    },
+                    onMapLongPressed = { nx, ny ->
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        EchoSoundManager.triggerHeartbeatVibration(context)
+                        EchoSoundManager.playNeedleDrop()
+                        EchoStateRepository.sendWarmth(selectedVinyl?.id ?: "", nx, ny)
+                        reactionSentFeedback = "♨️ Призрачное тепло отправлено на радар ✨"
+                    },
                     onCenterUserClicked = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         EchoSoundManager.playNeedleDrop()
                         EchoAudioPlayer.stop()
                         selectedVinyl = currentPlayingTrack.toVinylTrack()
                         manualSpinning = true
+                    },
+                    onLagrangeClicked = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        EchoSoundManager.playUnlockChime()
+                        showLagrangeDialog = true
                     }
                 )
 
@@ -518,6 +566,22 @@ fun VinylCityMainScreen() {
                     },
                     isThanked = hasSentThankYouToTarget == activeTrack.id,
                     isSavedInChronicle = EchoChronicleManager.isTrackSaved(activeTrack.artist, activeTrack.title),
+                    isNeedleSynced = isNeedleSynced,
+                    onSyncNeedle = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        EchoSoundManager.triggerHeartbeatVibration(context)
+                        EchoSoundManager.playNeedleDrop()
+                        EchoStateRepository.syncNeedle(activeTrack.id)
+                        EchoAudioPlayer.toggle(activeTrack.artist, activeTrack.title, trackMediaInfo.previewAudioUrl)
+                        reactionSentFeedback = "🪡 Синхронизация иглы: Вы слушаете вместе ✨"
+                    },
+                    onSendWaveImpulse = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        EchoSoundManager.playWavePulse()
+                        EchoStateRepository.sendWaveImpulse(activeTrack.id) { ok ->
+                            reactionSentFeedback = if (ok) "Волна ушла по ночному радару 🌊" else "Импульс отправлен 🌊"
+                        }
+                    },
                     onSendThankYou = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         hasSentThankYouToTarget = activeTrack.id
@@ -627,6 +691,57 @@ fun VinylCityMainScreen() {
     // =========================================================
     // MODAL DIALOGS
     // =========================================================
+
+    // 0. АРГОН: ЗВУКОВАЯ АНОМАЛИЯ «ТОЧКА ЛАГРАНЖА» (АКУСТИЧЕСКОЕ ЗАТМЕНИЕ)
+    if (showLagrangeDialog && lagrangePoint != null) {
+        AlertDialog(
+            onDismissRequest = { showLagrangeDialog = false },
+            containerColor = Color(0xFF0F1522),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(text = "✦", color = Color(0xFFFFD700), fontSize = 20.sp)
+                    Text(text = "Точка Лагранжа", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = lagrangePoint?.secretMessage ?: "Акустическое затмение трёх ночных слушателей.",
+                        color = Color(0xFFE2E8F0),
+                        fontSize = 12.5.sp
+                    )
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF182234),
+                        border = BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.5f))
+                    ) {
+                        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(text = "🎵", fontSize = 18.sp)
+                            Column {
+                                Text(text = "Скрытый трек созвучия", color = Color(0xFFFFD700), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                Text(text = lagrangePoint?.secretTrack ?: "", color = Color.White, fontSize = 13.5.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showLagrangeDialog = false
+                    lagrangePoint?.let {
+                        EchoAudioPlayer.toggle("Burial", "Archangel", trackMediaInfo.previewAudioUrl)
+                    }
+                }) {
+                    Text(text = "♫ Слушать эхо затмения", color = Color(0xFF00F0FF))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLagrangeDialog = false }) {
+                    Text(text = "Закрыть", color = Color(0xFF94A3B8))
+                }
+            }
+        )
+    }
 
     // A. ENLARGED ALBUM COVER ZOOM MODAL (HIGH-RES VIEW & AUDIO PREVIEW)
     if (showCoverZoomDialog) {
@@ -1130,57 +1245,110 @@ fun VinylCityMainScreen() {
 fun VinylCityMapCanvas(
     allVinyls: List<VinylTrack>,
     selectedVinyl: VinylTrack?,
+    thermalPatches: List<ThermalPatch> = emptyList(),
+    needleSyncedTargets: Set<String> = emptySet(),
+    lagrangePoint: LagrangePointInfo? = null,
+    isDawnMode: Boolean = false,
     neonPulse: Float,
     laserPhotonProgress: Float,
     onVinylSelected: (VinylTrack) -> Unit,
-    onCenterUserClicked: () -> Unit
+    onVinylLongClicked: (VinylTrack) -> Unit,
+    onMapLongPressed: (Float, Float) -> Unit,
+    onCenterUserClicked: () -> Unit,
+    onLagrangeClicked: () -> Unit = {}
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(allVinyls, selectedVinyl) {
-                    detectTapGestures { tapOffset ->
-                        val center = Offset(size.width / 2f, size.height / 2f)
-                        val maxR = minOf(size.width, size.height) * 0.44f
+                .pointerInput(allVinyls, selectedVinyl, lagrangePoint) {
+                    detectTapGestures(
+                        onTap = { tapOffset ->
+                            val center = Offset(size.width / 2f, size.height / 2f)
+                            val maxR = minOf(size.width, size.height) * 0.44f
 
-                        // Check tap on center user beacon
-                        val distCenter = sqrt(
-                            (tapOffset.x - center.x) * (tapOffset.x - center.x) +
-                            (tapOffset.y - center.y) * (tapOffset.y - center.y)
-                        )
-                        if (distCenter < 38.dp.toPx()) {
-                            onCenterUserClicked()
-                            return@detectTapGestures
-                        }
+                            // 1. Проверка тапа по Точке Лагранжа
+                            if (lagrangePoint != null && lagrangePoint.active) {
+                                val radL = Math.toRadians(lagrangePoint.angleDegrees.toDouble())
+                                val rL = maxR * lagrangePoint.distanceRatio.coerceIn(0.24f, 0.92f)
+                                val lx = center.x + (rL * cos(radL)).toFloat()
+                                val ly = center.y + (rL * sin(radL)).toFloat()
+                                val distL = sqrt((tapOffset.x - lx) * (tapOffset.x - lx) + (tapOffset.y - ly) * (tapOffset.y - ly))
+                                if (distL < 38.dp.toPx()) {
+                                    onLagrangeClicked()
+                                    return@detectTapGestures
+                                }
+                            }
 
-                        // Check tap on mini vinyls
-                        var clickedVinyl: VinylTrack? = null
-                        var minDistance = 44.dp.toPx()
+                            // 2. Проверка тапа по центру (свой винил)
+                            val distCenter = sqrt(
+                                (tapOffset.x - center.x) * (tapOffset.x - center.x) +
+                                (tapOffset.y - center.y) * (tapOffset.y - center.y)
+                            )
+                            if (distCenter < 38.dp.toPx()) {
+                                onCenterUserClicked()
+                                return@detectTapGestures
+                            }
 
-                        allVinyls.forEach { vinyl ->
-                            val jitter = (vinyl.id.hashCode() % 25 - 12) * 0.35f
-                            val rad = Math.toRadians((vinyl.angleDeg + jitter).toDouble())
-                            val r = maxR * vinyl.ringFactor.coerceIn(0.24f, 0.92f)
-                            val vx = center.x + (r * cos(rad)).toFloat()
-                            val vy = center.y + (r * sin(rad)).toFloat()
+                            // 3. Проверка тапа по винилам
+                            var clickedVinyl: VinylTrack? = null
+                            var minDistance = 44.dp.toPx()
 
-                            val d = sqrt((tapOffset.x - vx) * (tapOffset.x - vx) + (tapOffset.y - vy) * (tapOffset.y - vy))
-                            if (d < minDistance) {
-                                minDistance = d
-                                clickedVinyl = vinyl
+                            allVinyls.forEach { vinyl ->
+                                val jitter = (vinyl.id.hashCode() % 25 - 12) * 0.35f
+                                val rad = Math.toRadians((vinyl.angleDeg + jitter).toDouble())
+                                val r = maxR * vinyl.ringFactor.coerceIn(0.24f, 0.92f)
+                                val vx = center.x + (r * cos(rad)).toFloat()
+                                val vy = center.y + (r * sin(rad)).toFloat()
+
+                                val d = sqrt((tapOffset.x - vx) * (tapOffset.x - vx) + (tapOffset.y - vy) * (tapOffset.y - vy))
+                                if (d < minDistance) {
+                                    minDistance = d
+                                    clickedVinyl = vinyl
+                                }
+                            }
+
+                            clickedVinyl?.let { onVinylSelected(it) }
+                        },
+                        onLongPress = { tapOffset ->
+                            val center = Offset(size.width / 2f, size.height / 2f)
+                            val maxR = minOf(size.width, size.height) * 0.44f
+
+                            var longClickedVinyl: VinylTrack? = null
+                            var minDistance = 44.dp.toPx()
+
+                            allVinyls.forEach { vinyl ->
+                                val jitter = (vinyl.id.hashCode() % 25 - 12) * 0.35f
+                                val rad = Math.toRadians((vinyl.angleDeg + jitter).toDouble())
+                                val r = maxR * vinyl.ringFactor.coerceIn(0.24f, 0.92f)
+                                val vx = center.x + (r * cos(rad)).toFloat()
+                                val vy = center.y + (r * sin(rad)).toFloat()
+
+                                val d = sqrt((tapOffset.x - vx) * (tapOffset.x - vx) + (tapOffset.y - vy) * (tapOffset.y - vy))
+                                if (d < minDistance) {
+                                    minDistance = d
+                                    longClickedVinyl = vinyl
+                                }
+                            }
+
+                            if (longClickedVinyl != null) {
+                                // Долгое нажатие на винил -> Синхронизация иглы (Drop-in)
+                                onVinylLongClicked(longClickedVinyl)
+                            } else {
+                                // Долгое нажатие на карту -> Передача призрачного тепла (Thermal Breath)
+                                val nx = (tapOffset.x / size.width).coerceIn(0f, 1f)
+                                val ny = (tapOffset.y / size.height).coerceIn(0f, 1f)
+                                onMapLongPressed(nx, ny)
                             }
                         }
-
-                        clickedVinyl?.let { onVinylSelected(it) }
-                    }
+                    )
                 }
         ) {
             val center = Offset(size.width / 2f, size.height / 2f)
             val maxR = minOf(size.width, size.height) * 0.44f
 
-            // A. PROCEDURAL NIGHT CITY MAP
-            // 1. River Waterway
+            // A. ПРОЦЕДУРНАЯ КАРТА НОЧНОГО ГОРОДА
+            // 1. Водная гладь реки
             val riverPath = Path().apply {
                 moveTo(-50f, size.height * 0.22f)
                 cubicTo(
@@ -1200,7 +1368,7 @@ fun VinylCityMapCanvas(
                 style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round)
             )
 
-            // 2. City Street Grid (Avenues & Arteries)
+            // 2. Уличная сетка кварталов
             val streetColor = Color(0xFF141B28)
             val avenueColor = Color(0xFFFFB800).copy(alpha = 0.08f)
 
@@ -1236,7 +1404,7 @@ fun VinylCityMapCanvas(
                 )
             }
 
-            // B. CONCENTRIC DISTANCE ACOUSTIC RINGS
+            // B. КОНЦЕНТРИЧЕСКИЕ АКУСТИЧЕСКИЕ ВОЛНЫ
             val ringRadii = listOf(maxR * 0.35f, maxR * 0.65f, maxR * 0.95f)
             ringRadii.forEach { radius ->
                 drawCircle(
@@ -1247,7 +1415,69 @@ fun VinylCityMapCanvas(
                 )
             }
 
-            // C. RESONANCE LASER CHORD TO SELECTED VINYL
+            // C. АРГОН: ПРИЗРАЧНОЕ ТЕПЛО (THERMAL BREATH)
+            thermalPatches.forEach { patch ->
+                val patchPos = Offset(patch.x * size.width, patch.y * size.height)
+                val progress = (patch.ageSec / 15f).coerceIn(0f, 1f)
+                val alpha = (1f - progress) * 0.70f
+                val currentRadius = (28.dp.toPx() + (progress * 42.dp.toPx()))
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFFFFB800).copy(alpha = alpha),
+                            Color(0xFFFB7185).copy(alpha = alpha * 0.45f),
+                            Color.Transparent
+                        ),
+                        center = patchPos,
+                        radius = currentRadius
+                    ),
+                    radius = currentRadius,
+                    center = patchPos
+                )
+            }
+
+            // D. АРГОН: ТОЧКА ЛАГРАНЖА (АКУСТИЧЕСКОЕ ЗАТМЕНИЕ ТРИАДЫ)
+            if (lagrangePoint != null && lagrangePoint.active) {
+                val lRad = Math.toRadians(lagrangePoint.angleDegrees.toDouble())
+                val lR = maxR * lagrangePoint.distanceRatio.coerceIn(0.24f, 0.92f)
+                val lCenter = Offset(center.x + (lR * cos(lRad)).toFloat(), center.y + (lR * sin(lRad)).toFloat())
+
+                val participantPoints = allVinyls.filter { it.id in lagrangePoint.participants }.map { v ->
+                    val j = (v.id.hashCode() % 25 - 12) * 0.35f
+                    val rRad = Math.toRadians((v.angleDeg + j).toDouble())
+                    val rDist = maxR * v.ringFactor.coerceIn(0.24f, 0.92f)
+                    Offset(center.x + (rDist * cos(rRad)).toFloat(), center.y + (rDist * sin(rRad)).toFloat())
+                }
+
+                if (participantPoints.size >= 3) {
+                    val triPath = Path().apply {
+                        moveTo(participantPoints[0].x, participantPoints[0].y)
+                        lineTo(participantPoints[1].x, participantPoints[1].y)
+                        lineTo(participantPoints[2].x, participantPoints[2].y)
+                        close()
+                    }
+                    drawPath(
+                        path = triPath,
+                        color = Color(0xFF00F0FF).copy(alpha = 0.08f * neonPulse)
+                    )
+                    drawPath(
+                        path = triPath,
+                        color = Color(0xFF00F0FF).copy(alpha = 0.35f * neonPulse),
+                        style = Stroke(width = 1.2.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 8f)))
+                    )
+                }
+
+                // Пульсирующая звезда Точки Лагранжа
+                drawCircle(
+                    color = Color(0xFFFFD700).copy(alpha = 0.28f * neonPulse),
+                    radius = 24.dp.toPx() * neonPulse,
+                    center = lCenter
+                )
+                drawCircle(color = Color(0xFFFFD700), radius = 7.dp.toPx(), center = lCenter)
+                drawCircle(color = Color.White, radius = 3.5.dp.toPx(), center = lCenter)
+            }
+
+            // E. ЛАЗЕРНАЯ ХОРДА С ГРАВИТАЦИОННЫМ ФАЗОВЫМ СДВИГОМ (ОСЦИЛЛОГРАФ)
             selectedVinyl?.let { target ->
                 if (!target.isSelf) {
                     val jitter = (target.id.hashCode() % 25 - 12) * 0.35f
@@ -1259,20 +1489,54 @@ fun VinylCityMapCanvas(
                     )
 
                     val chordColor = Color(target.colorHex)
-                    drawLine(
-                        color = chordColor.copy(alpha = 0.22f),
-                        start = center,
-                        end = targetOffset,
-                        strokeWidth = 6.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
-                    drawLine(
-                        color = chordColor.copy(alpha = 0.85f),
-                        start = center,
-                        end = targetOffset,
-                        strokeWidth = 1.8.dp.toPx(),
-                        cap = StrokeCap.Round
-                    )
+                    val dx = targetOffset.x - center.x
+                    val dy = targetOffset.y - center.y
+                    val chordDist = sqrt(dx * dx + dy * dy)
+
+                    // Если совместимость >= 80% — вибрирующая струна осциллографа в фазовом унисоне!
+                    if (target.compatibility >= 80 && chordDist > 1f) {
+                        val ux = dx / chordDist
+                        val uy = dy / chordDist
+                        val px = -uy
+                        val py = ux
+
+                        val steps = 28
+                        val wavePath = Path()
+                        wavePath.moveTo(center.x, center.y)
+                        for (s in 1..steps) {
+                            val t = s.toFloat() / steps
+                            val baseX = center.x + dx * t
+                            val baseY = center.y + dy * t
+                            val waveAmp = sin(t * 18f - laserPhotonProgress * 2f * PI.toFloat()) * 5.5.dp.toPx() * sin(t * PI.toFloat())
+                            wavePath.lineTo(baseX + px * waveAmp, baseY + py * waveAmp)
+                        }
+
+                        drawPath(
+                            path = wavePath,
+                            color = chordColor.copy(alpha = 0.25f),
+                            style = Stroke(width = 6.dp.toPx(), cap = StrokeCap.Round)
+                        )
+                        drawPath(
+                            path = wavePath,
+                            color = chordColor.copy(alpha = 0.90f),
+                            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                        )
+                    } else {
+                        drawLine(
+                            color = chordColor.copy(alpha = 0.22f),
+                            start = center,
+                            end = targetOffset,
+                            strokeWidth = 6.dp.toPx(),
+                            cap = StrokeCap.Round
+                        )
+                        drawLine(
+                            color = chordColor.copy(alpha = 0.85f),
+                            start = center,
+                            end = targetOffset,
+                            strokeWidth = 1.8.dp.toPx(),
+                            cap = StrokeCap.Round
+                        )
+                    }
 
                     val photonPos = Offset(
                         center.x + (targetOffset.x - center.x) * laserPhotonProgress,
@@ -1283,7 +1547,7 @@ fun VinylCityMapCanvas(
                 }
             }
 
-            // D. FLOATING MINI VINYL RECORDS
+            // F. ПЛАВАЮЩИЕ МИНИ-ВИНИЛЫ В ГОРОДЕ
             allVinyls.forEach { vinyl ->
                 val jitter = (vinyl.id.hashCode() % 25 - 12) * 0.35f
                 val rad = Math.toRadians((vinyl.angleDeg + jitter).toDouble())
@@ -1295,48 +1559,59 @@ fun VinylCityMapCanvas(
 
                 val isFocused = selectedVinyl?.id == vinyl.id
                 val isPc = vinyl.id == "pc_studio_node" || vinyl.sourceApp.contains("ПК") || vinyl.sourceApp.contains("Windows")
+                val isSynced = needleSyncedTargets.contains(vinyl.id)
                 val vinylBaseColor = if (isPc) Color(0xFF00F0FF) else Color(vinyl.colorHex)
+                val ghostAlpha = if (vinyl.isGhost) 0.42f else 1.0f
 
-                // Neon puddle on asphalt (enhanced for PC)
+                // Неоновая лужа на асфальте
                 drawCircle(
-                    color = vinylBaseColor.copy(alpha = if (isFocused) 0.45f else if (isPc) 0.35f else 0.15f),
+                    color = vinylBaseColor.copy(alpha = (if (isFocused) 0.45f else if (isPc) 0.35f else 0.15f) * ghostAlpha),
                     radius = (if (isFocused) 26.dp else if (isPc) 22.dp else 18.dp).toPx() * neonPulse,
                     center = pos
                 )
 
                 if (isPc) {
                     drawCircle(
-                        color = Color(0xFF00F0FF).copy(alpha = 0.55f),
+                        color = Color(0xFF00F0FF).copy(alpha = 0.55f * ghostAlpha),
                         radius = 20.dp.toPx() * neonPulse,
                         center = pos,
                         style = Stroke(width = 1.2.dp.toPx())
                     )
                 }
 
-                // Mini Vinyl Disc
+                // АРГОН: Вторая тонкая световая орбита при Синхронизации иглы (Needle Sync)
+                if (isSynced) {
+                    drawCircle(
+                        color = Color(0xFFFFD700).copy(alpha = 0.85f * neonPulse),
+                        radius = 24.dp.toPx() * neonPulse,
+                        center = pos,
+                        style = Stroke(width = 1.6.dp.toPx())
+                    )
+                }
+
+                // Тело пластинки (с учетом прозрачности фантомного винила)
                 val discRadius = (if (isFocused) 16.dp else if (isPc) 14.dp else 12.dp).toPx()
 
-                drawCircle(color = Color(0xFF141720), radius = discRadius, center = pos)
+                drawCircle(color = Color(0xFF141720).copy(alpha = ghostAlpha), radius = discRadius, center = pos)
                 drawCircle(
-                    color = if (isFocused) vinylBaseColor else Color(0xFF2D3748),
+                    color = if (isFocused) vinylBaseColor.copy(alpha = ghostAlpha) else Color(0xFF2D3748).copy(alpha = ghostAlpha),
                     radius = discRadius,
                     center = pos,
                     style = Stroke(width = if (isFocused) 1.8.dp.toPx() else 1.dp.toPx())
                 )
                 drawCircle(
-                    color = Color(0xFF222B3D),
+                    color = Color(0xFF222B3D).copy(alpha = ghostAlpha),
                     radius = discRadius * 0.65f,
                     center = pos,
                     style = Stroke(width = 0.8.dp.toPx())
                 )
-                drawCircle(color = vinylBaseColor, radius = discRadius * 0.38f, center = pos)
-                drawCircle(color = Color.Black, radius = discRadius * 0.12f, center = pos)
+                drawCircle(color = vinylBaseColor.copy(alpha = ghostAlpha), radius = discRadius * 0.38f, center = pos)
+                drawCircle(color = Color.Black.copy(alpha = ghostAlpha), radius = discRadius * 0.12f, center = pos)
 
                 // Proof-of-Music Capsule & Venue Lock Indicators
                 if (vinyl.isCapsule) {
                     val amberColor = Color(0xFFFFB800)
                     if (vinyl.isVenue) {
-                        // Venue ring
                         drawCircle(
                             color = amberColor.copy(alpha = 0.45f * neonPulse),
                             radius = discRadius * 1.55f,
@@ -1344,14 +1619,12 @@ fun VinylCityMapCanvas(
                             style = Stroke(width = 1.4.dp.toPx())
                         )
                         if (!vinyl.isUnlocked) {
-                            // Locked venue indicator: crimson-amber lock badge
                             drawCircle(
                                 color = Color(0xFFFF5533),
                                 radius = 3.5.dp.toPx(),
                                 center = Offset(pos.x + discRadius * 0.95f, pos.y - discRadius * 0.95f)
                             )
                         } else {
-                            // Unlocked venue indicator: golden star badge
                             drawCircle(
                                 color = Color(0xFFFFD700),
                                 radius = 4.dp.toPx() * neonPulse,
@@ -1359,7 +1632,6 @@ fun VinylCityMapCanvas(
                             )
                         }
                     } else {
-                        // Regular capsule: subtle golden halo
                         drawCircle(
                             color = amberColor.copy(alpha = 0.35f),
                             radius = discRadius * 1.35f,
@@ -1370,7 +1642,21 @@ fun VinylCityMapCanvas(
                 }
             }
 
-            // E. USER CENTER POSITION (Core Turntable Beacon)
+            // G. АРГОН: ШУМ РАССВЕТА (DAWN NOISE / СТАТИКА И ПЛЕНОЧНОЕ ЗЕРНО)
+            if (isDawnMode) {
+                val dotCount = 36
+                for (i in 0 until dotCount) {
+                    val rx = ((i * 73 + (neonPulse * 120).toInt()) % size.width.toInt()).toFloat()
+                    val ry = ((i * 127 + (neonPulse * 90).toInt()) % size.height.toInt()).toFloat()
+                    drawCircle(
+                        color = Color(0xFFFDE68A).copy(alpha = 0.09f),
+                        radius = 1.4.dp.toPx(),
+                        center = Offset(rx, ry)
+                    )
+                }
+            }
+
+            // H. ЦЕНТР: МАЯК СЛУШАТЕЛЯ
             val userCoreColor = Color(0xFF00F0FF)
             drawCircle(
                 color = userCoreColor.copy(alpha = 0.18f),
@@ -1397,12 +1683,15 @@ fun TurntableDeckView(
     isAudioLoading: Boolean,
     isThanked: Boolean,
     isSavedInChronicle: Boolean,
+    isNeedleSynced: Boolean = false,
     onToggleSpin: () -> Unit,
     onToggleAudioPreview: () -> Unit,
     onOpenCoverZoom: () -> Unit,
     onOpenInMusicApp: () -> Unit,
     onSendThankYou: () -> Unit,
     onSaveToChronicle: () -> Unit,
+    onSyncNeedle: () -> Unit = {},
+    onSendWaveImpulse: () -> Unit = {},
     onOpenCuratorStory: () -> Unit,
     onSelectSelf: () -> Unit
 ) {
@@ -1581,7 +1870,35 @@ fun TurntableDeckView(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                // CHATGPT & АРГОН: Акустические характеристики трека и статус синхрона
+                if (activeTrack.bpm > 0) {
+                    Text(
+                        text = "♩ ${activeTrack.bpm} BPM • Camelot ${activeTrack.camelotKey} • ${activeTrack.genre}",
+                        color = Color(0xFF94A3B8),
+                        fontSize = 10.5.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 1
+                    )
+                }
+
+                if (isNeedleSynced) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFFFFD700).copy(alpha = 0.16f),
+                        border = BorderStroke(1.dp, Color(0xFFFFD700).copy(alpha = 0.7f)),
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "🪡 СИНХРОН ИГЛЫ АКТИВЕН",
+                            color = Color(0xFFFFD700),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
 
                 // Poetic Persona Button
                 Surface(
@@ -1673,6 +1990,63 @@ fun TurntableDeckView(
                                 text = "«${activeTrack.observation}»",
                                 color = Color(0xFFE2E8F0),
                                 fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+            }
+
+            // A00. АРГОН: НЕВЕРБАЛЬНЫЙ ЭТИКЕТ (СИНХРОНИЗАЦИЯ ИГЛЫ & КАМЕНЬ В ВОДУ)
+            if (!activeTrack.isSelf) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isNeedleSynced) Color(0xFFFFD700).copy(alpha = 0.18f) else Color(0xFF141926),
+                        border = BorderStroke(1.dp, if (isNeedleSynced) Color(0xFFFFD700) else Color(0xFFFFD700).copy(alpha = 0.45f)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(34.dp)
+                            .clickable { onSyncNeedle() }
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = if (isNeedleSynced) "🪡 Игла в унисоне" else "🪡 Синхрон иглы (Drop-in)",
+                                color = Color(0xFFFFD700),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF141926),
+                        border = BorderStroke(1.dp, Color(0xFF00F0FF).copy(alpha = 0.45f)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(34.dp)
+                            .clickable { onSendWaveImpulse() }
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = "🌊 Камень в воду",
+                                color = Color(0xFF00F0FF),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
                             )
                         }
                     }

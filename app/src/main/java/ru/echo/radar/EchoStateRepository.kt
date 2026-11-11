@@ -37,7 +37,28 @@ data class NearbyEchoSignal(
     val ringFactor: Float,
     val colorHex: Long = 0xFF38BDF8L,
     val isGhost: Boolean = false,
-    val coverUrl: String? = null
+    val coverUrl: String? = null,
+    val bpm: Int = 120,
+    val camelotKey: String = "8A",
+    val genre: String = "indie"
+)
+
+data class ThermalPatch(
+    val id: String,
+    val targetId: String,
+    val senderId: String,
+    val x: Float,
+    val y: Float,
+    val ageSec: Float
+)
+
+data class LagrangePointInfo(
+    val active: Boolean,
+    val angleDegrees: Float,
+    val distanceRatio: Float,
+    val secretTrack: String,
+    val secretMessage: String,
+    val participants: List<String>
 )
 
 data class EchoCapsule(
@@ -112,6 +133,22 @@ object EchoStateRepository {
     // ── Музыкальные капсулы (маячки-тайники) ──
     private val _capsules = MutableStateFlow<List<EchoCapsule>>(emptyList())
     val capsules: StateFlow<List<EchoCapsule>> = _capsules.asStateFlow()
+
+    // ── АРГОН: Тепловые пятна на карте (Призрачное тепло / дыхание на стекле) ──
+    private val _thermalPatches = MutableStateFlow<List<ThermalPatch>>(emptyList())
+    val thermalPatches: StateFlow<List<ThermalPatch>> = _thermalPatches.asStateFlow()
+
+    // ── АРГОН: Синхронизация иглы (Drop-in синхрон) ──
+    private val _needleSyncedTargets = MutableStateFlow<Set<String>>(emptySet())
+    val needleSyncedTargets: StateFlow<Set<String>> = _needleSyncedTargets.asStateFlow()
+
+    // ── АРГОН: Точка Лагранжа (Акустическое затмение при 3+ слушателях) ──
+    private val _lagrangePoint = MutableStateFlow<LagrangePointInfo?>(null)
+    val lagrangePoint: StateFlow<LagrangePointInfo?> = _lagrangePoint.asStateFlow()
+
+    // ── АРГОН: Шум рассвета (Dawn Noise / пленочное зерно) ──
+    private val _isDawnMode = MutableStateFlow(false)
+    val isDawnMode: StateFlow<Boolean> = _isDawnMode.asStateFlow()
 
     // ── Входящие отклики (импульсы) от других слушателей/ПК ──
     private val _incomingReaction = MutableStateFlow<IncomingReaction?>(null)
@@ -313,7 +350,10 @@ object EchoStateRepository {
                             ringFactor = s.optDouble("distanceRatio", 0.5).toFloat(),
                             colorHex = s.optLong("colorHex", 0xFF38BDF8L),
                             isGhost = s.optBoolean("isGhost", false),
-                            coverUrl = parsedCover
+                            coverUrl = parsedCover,
+                            bpm = s.optInt("bpm", 120),
+                            camelotKey = s.optString("camelotKey", "8A"),
+                            genre = s.optString("genre", "indie")
                         )
                     )
                 }
@@ -409,6 +449,59 @@ object EchoStateRepository {
                 }
                 EchoChronicleManager.updateReactionsHistory(histList)
             }
+
+            // 6. АРГОН: Тепловые пятна
+            val patchesArray = json.optJSONArray("thermalPatches")
+            val patches = mutableListOf<ThermalPatch>()
+            if (patchesArray != null) {
+                for (i in 0 until patchesArray.length()) {
+                    val p = patchesArray.getJSONObject(i)
+                    patches.add(
+                        ThermalPatch(
+                            id = p.optString("id", ""),
+                            targetId = p.optString("targetId", ""),
+                            senderId = p.optString("senderId", ""),
+                            x = p.optDouble("x", 0.5).toFloat(),
+                            y = p.optDouble("y", 0.5).toFloat(),
+                            ageSec = p.optDouble("ageSec", 0.0).toFloat()
+                        )
+                    )
+                }
+            }
+            _thermalPatches.value = patches
+
+            // 7. АРГОН: Синхронизированные цели
+            val syncsArray = json.optJSONArray("needleSyncedTargets")
+            val syncSet = mutableSetOf<String>()
+            if (syncsArray != null) {
+                for (i in 0 until syncsArray.length()) {
+                    syncSet.add(syncsArray.getString(i))
+                }
+            }
+            _needleSyncedTargets.value = syncSet
+
+            // 8. АРГОН: Точка Лагранжа
+            val lagObj = json.optJSONObject("lagrangePoint")
+            if (lagObj != null && lagObj.optBoolean("active", false)) {
+                val partsArr = lagObj.optJSONArray("participants")
+                val parts = mutableListOf<String>()
+                if (partsArr != null) {
+                    for (i in 0 until partsArr.length()) parts.add(partsArr.getString(i))
+                }
+                _lagrangePoint.value = LagrangePointInfo(
+                    active = true,
+                    angleDegrees = lagObj.optDouble("angleDegrees", 0.0).toFloat(),
+                    distanceRatio = lagObj.optDouble("distanceRatio", 0.5).toFloat(),
+                    secretTrack = lagObj.optString("secretTrack", "Burial — Archangel (Nocturnal Re-edit)"),
+                    secretMessage = lagObj.optString("secretMessage", "Точка Лагранжа: акустическое затмение"),
+                    participants = parts
+                )
+            } else {
+                _lagrangePoint.value = null
+            }
+
+            // 9. АРГОН: Шум рассвета
+            _isDawnMode.value = json.optBoolean("isDawnMode", false)
 
         } catch (e: IOException) {
             consecutiveErrors++
@@ -547,6 +640,104 @@ object EchoStateRepository {
                 withContext(Dispatchers.Main) { onResult?.invoke(ok) }
             } catch (e: Exception) {
                 Log.w("EchoRepo", "Reaction failed: ${e.message}")
+                withContext(Dispatchers.Main) { onResult?.invoke(false) }
+            }
+        }
+    }
+
+    // ── АРГОН: Синхронизация иглы (Drop-in синхрон) ──
+    fun syncNeedle(targetId: String, onResult: ((Boolean) -> Unit)? = null) {
+        scope.launch {
+            val url = buildUrl("/api/needle_sync")
+            if (url.isBlank()) {
+                withContext(Dispatchers.Main) { onResult?.invoke(false) }
+                return@launch
+            }
+            val body = JSONObject().apply {
+                put("targetId", targetId)
+                put("senderId", deviceId)
+            }.toString()
+
+            val token = _echoToken.value
+            val requestBuilder = Request.Builder()
+                .url(url)
+                .post(body.toRequestBody("application/json".toMediaType()))
+            if (token.isNotBlank()) requestBuilder.addHeader("X-Echo-Token", token)
+            requestBuilder.addHeader("X-Device-Id", deviceId)
+
+            try {
+                val ok = withContext(Dispatchers.IO) {
+                    httpClient.newCall(requestBuilder.build()).execute().use { it.isSuccessful }
+                }
+                withContext(Dispatchers.Main) { onResult?.invoke(ok) }
+                syncWithServer()
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { onResult?.invoke(false) }
+            }
+        }
+    }
+
+    // ── АРГОН: Передача призрачного тепла (Thermal Breath) ──
+    fun sendWarmth(targetId: String, x: Float, y: Float, onResult: ((Boolean) -> Unit)? = null) {
+        scope.launch {
+            val url = buildUrl("/api/send_warmth")
+            if (url.isBlank()) {
+                withContext(Dispatchers.Main) { onResult?.invoke(false) }
+                return@launch
+            }
+            val body = JSONObject().apply {
+                put("targetId", targetId)
+                put("senderId", deviceId)
+                put("x", x)
+                put("y", y)
+            }.toString()
+
+            val token = _echoToken.value
+            val requestBuilder = Request.Builder()
+                .url(url)
+                .post(body.toRequestBody("application/json".toMediaType()))
+            if (token.isNotBlank()) requestBuilder.addHeader("X-Echo-Token", token)
+            requestBuilder.addHeader("X-Device-Id", deviceId)
+
+            try {
+                val ok = withContext(Dispatchers.IO) {
+                    httpClient.newCall(requestBuilder.build()).execute().use { it.isSuccessful }
+                }
+                withContext(Dispatchers.Main) { onResult?.invoke(ok) }
+                syncWithServer()
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { onResult?.invoke(false) }
+            }
+        }
+    }
+
+    // ── АРГОН: Звуковой импульс «Камень в воду» ──
+    fun sendWaveImpulse(targetId: String, onResult: ((Boolean) -> Unit)? = null) {
+        scope.launch {
+            val url = buildUrl("/api/wave_impulse")
+            if (url.isBlank()) {
+                withContext(Dispatchers.Main) { onResult?.invoke(false) }
+                return@launch
+            }
+            val body = JSONObject().apply {
+                put("targetId", targetId)
+                put("senderId", deviceId)
+            }.toString()
+
+            val token = _echoToken.value
+            val requestBuilder = Request.Builder()
+                .url(url)
+                .post(body.toRequestBody("application/json".toMediaType()))
+            if (token.isNotBlank()) requestBuilder.addHeader("X-Echo-Token", token)
+            requestBuilder.addHeader("X-Device-Id", deviceId)
+
+            try {
+                val ok = withContext(Dispatchers.IO) {
+                    httpClient.newCall(requestBuilder.build()).execute().use { it.isSuccessful }
+                }
+                withContext(Dispatchers.Main) { onResult?.invoke(ok) }
+                syncWithServer()
+            } catch (e: Exception) {
                 withContext(Dispatchers.Main) { onResult?.invoke(false) }
             }
         }
