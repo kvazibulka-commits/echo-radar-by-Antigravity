@@ -519,7 +519,18 @@ fun EchoAppRoot() {
                                     }
                                 },
                                 onOpenInMusicApp = {
-                                    openMusicApp(context, activeTrack.artist, activeTrack.title, activeTrack.sourceApp)
+                                    if (activeTrack.artist.startsWith("Ожидание") ||
+                                        activeTrack.title.startsWith("Включите")
+                                    ) {
+                                        openYandexMusic(context)
+                                    } else {
+                                        openMusicApp(
+                                            context,
+                                            activeTrack.artist,
+                                            activeTrack.title,
+                                            activeTrack.sourceApp
+                                        )
+                                    }
                                 },
                                 onSyncNeedle = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
