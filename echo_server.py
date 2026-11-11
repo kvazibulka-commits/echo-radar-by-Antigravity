@@ -417,6 +417,12 @@ def init_db():
                 cur.execute("ALTER TABLE capsules ADD COLUMN venue_name TEXT DEFAULT ''")
             except Exception as e:
                 logger.debug("ALTER TABLE capsules is_venue/venue_name: %s", e)
+        if "min_resonance" not in cap_cols:
+            try:
+                cur.execute("ALTER TABLE capsules ADD COLUMN min_resonance INTEGER DEFAULT 0")
+                cur.execute("ALTER TABLE capsules ADD COLUMN secret_perk TEXT DEFAULT ''")
+            except Exception as e:
+                logger.debug("ALTER TABLE capsules min_resonance/secret_perk: %s", e)
         conn.commit()
 
         cur.execute("SELECT COUNT(*) FROM devices")
@@ -435,19 +441,20 @@ def init_db():
                     "cap_seed_01", "echo_curator", "Кино", "Спокойная ночь",
                     "Холодная акустика", "Проводник туманов", "Вечерняя улица",
                     "Слушай этот трек, когда огни фонарей начнут двоиться в мокром стекле...",
-                    52, 50.0, 0.36, 95, 1, c1_lat, c1_lon, 0, "", now
+                    52, 50.0, 0.36, 95, 1, c1_lat, c1_lon, 0, "", 0, "", now
                 ),
                 (
                     "cap_seed_02", "echo_curator", "Sirotkin", "Выше домов",
                     "Теплый винил", "Архивариус забытых кассет", "Вечерняя улица",
                     "Остановись на перекрестке и подними глаза к крышам домов.",
-                    95, 215.0, 0.55, 91, 1, c2_lat, c2_lon, 0, "", now
+                    95, 215.0, 0.55, 91, 1, c2_lat, c2_lon, 0, "", 0, "", now
                 ),
                 (
                     "cap_venue_03", "venue_vinyl_lab", "Massive Attack", "Teardrop",
                     "Аналоговый трип-хоп", "Виниловая лавка «Фонограф»", "Сретенка · Камерные бары",
-                    "Тайник от «Фонографа»: назови бариста кодовое слово «ЭХО-33» и получи чашку фильтра к пластинке.",
-                    70, 160.0, 0.42, 97, 1, c3_lat, c3_lon, 1, "Виниловая лавка «Фонограф»", now
+                    "Звуковой тайник «Фонографа»: мы на одной волне!",
+                    70, 160.0, 0.42, 97, 1, c3_lat, c3_lon, 1, "Виниловая лавка «Фонограф»",
+                    75, "Кодовое слово «ЭХО-33»: фильтр-кофе и скидка 15% на винил дня", now
                 )
             ]
             cur.executemany("""
@@ -455,8 +462,8 @@ def init_db():
                     id, creator_id, artist, title, mood_label, persona_title,
                     zone_name, secret_message, distance_meters, angle_degrees,
                     distance_ratio, compatibility_percent, is_unlocked, lat, lon,
-                    is_venue, venue_name, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    is_venue, venue_name, min_resonance, secret_perk, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, seed_caps)
             conn.commit()
 
@@ -739,6 +746,8 @@ def build_state_payload(for_device_id: str = None):
         for crow in cap_rows:
             is_ven = bool(crow["is_venue"]) if "is_venue" in crow.keys() else False
             ven_name = crow["venue_name"] if "venue_name" in crow.keys() else ""
+            min_res = int(crow["min_resonance"]) if "min_resonance" in crow.keys() and crow["min_resonance"] is not None else 0
+            perk = crow["secret_perk"] if "secret_perk" in crow.keys() and crow["secret_perk"] is not None else ""
             capsules.append({
                 "id": crow["id"],
                 "creatorId": crow["creator_id"],
@@ -757,6 +766,8 @@ def build_state_payload(for_device_id: str = None):
                 "lon": float(crow["lon"] or 37.6185),
                 "isVenue": is_ven,
                 "venueName": ven_name,
+                "minResonance": min_res,
+                "secretPerk": perk,
                 "createdAt": float(crow["created_at"] or 0)
             })
 
@@ -1141,6 +1152,8 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
             secret_msg = str(data.get("secretMessage") or "Слушай этот момент здесь...")
             is_venue = 1 if data.get("isVenue") else 0
             venue_name = str(data.get("venueName") or "").strip()
+            min_resonance = int(data.get("minResonance") or (75 if is_venue else 0))
+            secret_perk = str(data.get("secretPerk") or "").strip()
 
             curated = generate_curated_persona(artist, title, creator_id)
             mood_label = str(data.get("moodLabel") or curated["moodLabel"])
@@ -1160,13 +1173,13 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
                         id, creator_id, artist, title, mood_label, persona_title,
                         zone_name, secret_message, distance_meters, angle_degrees,
                         distance_ratio, compatibility_percent, is_unlocked, lat, lon,
-                        is_venue, venue_name, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+                        is_venue, venue_name, min_resonance, secret_perk, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     cap_id, creator_id, artist, title, mood_label, persona_title,
                     zone_name, secret_msg, dist_meters, angle_deg,
                     dist_ratio, curated["compatibilityPercent"], lat, lon,
-                    is_venue, venue_name, time.time()
+                    is_venue, venue_name, min_resonance, secret_perk, time.time()
                 ))
                 conn.commit()
                 conn.close()

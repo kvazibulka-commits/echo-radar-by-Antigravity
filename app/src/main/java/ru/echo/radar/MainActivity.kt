@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         EchoStateRepository.init(this)
+        EchoSoundManager.init(this)
         setContent {
             EchoRadarTheme {
                 Surface(
@@ -106,7 +107,12 @@ data class VinylTrack(
     val isCapsule: Boolean = false,
     val isGhost: Boolean = false,
     val isSelf: Boolean = false,
-    val coverUrl: String? = null
+    val coverUrl: String? = null,
+    val isVenue: Boolean = false,
+    val venueName: String = "",
+    val minResonance: Int = 0,
+    val secretPerk: String = "",
+    val isUnlocked: Boolean = true
 )
 
 fun PlayingTrack.toVinylTrack(): VinylTrack = VinylTrack(
@@ -146,16 +152,21 @@ fun EchoCapsule.toVinylTrack(): VinylTrack = VinylTrack(
     id = id,
     title = title,
     artist = artist,
-    sourceApp = if (isVenue) venueName else "Тайник",
+    sourceApp = if (isVenue && venueName.isNotBlank()) venueName else "Тайник",
     distanceLabel = distanceLabel,
     poeticPersona = personaTitle,
     observation = secretMessage,
-    story = "Музыкальная капсула, оставленная в зоне: $zoneName",
+    story = if (isVenue) "Звуковой паспорт заведения • $zoneName" else "Музыкальная капсула, оставленная в зоне: $zoneName",
     compatibility = compatibility,
     angleDeg = angleDeg,
     ringFactor = ringFactor,
-    colorHex = 0xFFFFB800L,
-    isCapsule = true
+    colorHex = if (isVenue) 0xFFFFB800L else 0xFFFF9900L,
+    isCapsule = true,
+    isVenue = isVenue,
+    venueName = venueName,
+    minResonance = minResonance,
+    secretPerk = secretPerk,
+    isUnlocked = isUnlocked
 )
 
 // -------------------------------------------------------------
@@ -387,6 +398,10 @@ fun VinylCityMainScreen() {
                     sonarFocusTargetId = sonarFocusTargetId,
                     onVinylSelected = { vinyl ->
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        EchoSoundManager.playNeedleDrop()
+                        if (vinyl.isCapsule && vinyl.isUnlocked) {
+                            EchoSoundManager.playUnlockChime()
+                        }
                         EchoAudioPlayer.stop()
                         selectedVinyl = vinyl
                         manualSpinning = true
@@ -394,6 +409,7 @@ fun VinylCityMainScreen() {
                     },
                     onCenterUserClicked = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        EchoSoundManager.playNeedleDrop()
                         EchoAudioPlayer.stop()
                         selectedVinyl = currentPlayingTrack.toVinylTrack()
                         manualSpinning = true
@@ -401,11 +417,13 @@ fun VinylCityMainScreen() {
                     },
                     onFocusClicked = { vinyl ->
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        EchoSoundManager.playSonarPing()
                         sonarFocusTargetId = vinyl.id
                         reactionSentFeedback = "⌖ Сонар сфокусирован: ${vinyl.artist}"
                     },
                     onDismissClicked = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        EchoSoundManager.playTick()
                         selectedVinyl = currentPlayingTrack.toVinylTrack()
                         sonarFocusTargetId = null
                     }
@@ -423,6 +441,7 @@ fun VinylCityMainScreen() {
                         .padding(start = 16.dp, bottom = 12.dp)
                         .clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            EchoSoundManager.playTick()
                             showChronicleDialog = true
                         }
                 ) {
@@ -460,6 +479,7 @@ fun VinylCityMainScreen() {
                         .padding(end = 16.dp, bottom = 12.dp)
                         .clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            EchoSoundManager.playTick()
                             showDropCapsuleDialog = true
                         }
                 ) {
@@ -494,7 +514,7 @@ fun VinylCityMainScreen() {
                     activeTrack = activeTrack,
                     mediaInfo = trackMediaInfo,
                     isSpinning = isPlatterSpinning,
-                    rotationAngle = if (isPlatterSpinning) platterRotationAngle else 0f,
+                    rotationAngle = { if (isPlatterSpinning) platterRotationAngle else 0f },
                     isAudioPlaying = isAudioPlaying,
                     isAudioLoading = isAudioLoading,
                     onToggleSpin = {
@@ -881,17 +901,26 @@ fun VinylCityMainScreen() {
         var capArtist by remember { mutableStateOf(currentPlayingTrack.artist.takeIf { !it.startsWith("Ожидание") } ?: "") }
         var capTitle by remember { mutableStateOf(currentPlayingTrack.title.takeIf { !it.startsWith("Включите") } ?: "") }
         var capNote by remember { mutableStateOf("") }
+        var isVenueMode by remember { mutableStateOf(false) }
+        var venueNameInput by remember { mutableStateOf("") }
+        var minResonanceInput by remember { mutableStateOf(75) }
+        var secretPerkInput by remember { mutableStateOf("") }
 
         AlertDialog(
             onDismissRequest = { showDropCapsuleDialog = false },
             containerColor = Color(0xFF111622),
             title = {
-                Text("Оставить виниловый тайник", color = Color(0xFFFFB800), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (isVenueMode) "🏛️ Звуковой тайник заведения" else "⏳ Оставить виниловый тайник",
+                    color = Color(0xFFFFB800),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
-                        text = "Тайник останется на карте города для других ночных слушателей.",
+                        text = if (isVenueMode) "Тайник будет заперт акустическим паролем (Proof-of-Music) и откроется только при созвучии." else "Тайник останется на карте города для других ночных слушателей.",
                         color = Color(0xFF94A3B8),
                         fontSize = 12.sp
                     )
@@ -932,19 +961,99 @@ fun VinylCityMainScreen() {
                             focusedBorderColor = Color(0xFFFFB800),
                             unfocusedBorderColor = Color(0xFF334155)
                         ),
-                        maxLines = 3,
+                        maxLines = 2,
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    // Proof-of-Music / Venue Toggle
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { isVenueMode = !isVenueMode }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Checkbox(
+                            checked = isVenueMode,
+                            onCheckedChange = { isVenueMode = it },
+                            colors = CheckboxDefaults.colors(
+                                checkedColor = Color(0xFFFFB800),
+                                uncheckedColor = Color(0xFF64748B)
+                            )
+                        )
+                        Text(
+                            text = "Акустический пароль (замок локации)",
+                            color = Color(0xFFE2E8F0),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    if (isVenueMode) {
+                        OutlinedTextField(
+                            value = venueNameInput,
+                            onValueChange = { venueNameInput = it },
+                            label = { Text("Имя локации / заведения", color = Color(0xFF94A3B8)) },
+                            placeholder = { Text("Виниловый бар / Кофейня", color = Color(0xFF475569)) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFFFFB800),
+                                unfocusedBorderColor = Color(0xFF334155)
+                            ),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = secretPerkInput,
+                            onValueChange = { secretPerkInput = it },
+                            label = { Text("Секретный подарок за созвучие", color = Color(0xFF94A3B8)) },
+                            placeholder = { Text("Фильтр-кофе со скидкой 20%", color = Color(0xFF475569)) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color(0xFFFFB800),
+                                unfocusedBorderColor = Color(0xFF334155)
+                            ),
+                            maxLines = 2,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Порог резонанса для замка:", color = Color(0xFF94A3B8), fontSize = 11.5.sp)
+                            Text("$minResonanceInput%", color = Color(0xFFFFB800), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Slider(
+                            value = minResonanceInput.toFloat(),
+                            onValueChange = { minResonanceInput = it.toInt() },
+                            valueRange = 50f..95f,
+                            steps = 8,
+                            colors = SliderDefaults.colors(
+                                thumbColor = Color(0xFFFFB800),
+                                activeTrackColor = Color(0xFFFFB800),
+                                inactiveTrackColor = Color(0xFF334155)
+                            )
+                        )
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
                         if (capArtist.isNotBlank() && capTitle.isNotBlank()) {
+                            EchoSoundManager.playTick()
                             EchoStateRepository.dropCapsule(
                                 artist = capArtist.trim(),
                                 title = capTitle.trim(),
-                                secretMessage = capNote.trim().ifBlank { "Музыкальный след ночного странника." }
+                                secretMessage = capNote.trim().ifBlank { "Музыкальный след ночного странника." },
+                                isVenue = isVenueMode,
+                                venueName = venueNameInput.trim(),
+                                minResonance = if (isVenueMode) minResonanceInput else 0,
+                                secretPerk = if (isVenueMode) secretPerkInput.trim() else ""
                             ) { ok ->
                                 reactionSentFeedback = if (ok) "Тайник заложен на карте!" else "Ошибка сети"
                             }
@@ -1257,6 +1366,43 @@ fun VinylCityMapCanvas(
                 )
                 drawCircle(color = vinylBaseColor, radius = discRadius * 0.38f, center = pos)
                 drawCircle(color = Color.Black, radius = discRadius * 0.12f, center = pos)
+
+                // Proof-of-Music Capsule & Venue Lock Indicators
+                if (vinyl.isCapsule) {
+                    val amberColor = Color(0xFFFFB800)
+                    if (vinyl.isVenue) {
+                        // Venue ring
+                        drawCircle(
+                            color = amberColor.copy(alpha = 0.45f * neonPulse),
+                            radius = discRadius * 1.55f,
+                            center = pos,
+                            style = Stroke(width = 1.4.dp.toPx())
+                        )
+                        if (!vinyl.isUnlocked) {
+                            // Locked venue indicator: crimson-amber lock badge
+                            drawCircle(
+                                color = Color(0xFFFF5533),
+                                radius = 3.5.dp.toPx(),
+                                center = Offset(pos.x + discRadius * 0.95f, pos.y - discRadius * 0.95f)
+                            )
+                        } else {
+                            // Unlocked venue indicator: golden star badge
+                            drawCircle(
+                                color = Color(0xFFFFD700),
+                                radius = 4.dp.toPx() * neonPulse,
+                                center = Offset(pos.x + discRadius * 0.95f, pos.y - discRadius * 0.95f)
+                            )
+                        }
+                    } else {
+                        // Regular capsule: subtle golden halo
+                        drawCircle(
+                            color = amberColor.copy(alpha = 0.35f),
+                            radius = discRadius * 1.35f,
+                            center = pos,
+                            style = Stroke(width = 1.dp.toPx())
+                        )
+                    }
+                }
             }
 
             // E. USER CENTER POSITION (Core Turntable Beacon)
@@ -1385,7 +1531,7 @@ fun TurntableDeckView(
     activeTrack: VinylTrack,
     mediaInfo: TrackMediaInfo,
     isSpinning: Boolean,
-    rotationAngle: Float,
+    rotationAngle: () -> Float,
     isAudioPlaying: Boolean,
     isAudioLoading: Boolean,
     isThanked: Boolean,
@@ -1432,7 +1578,7 @@ fun TurntableDeckView(
                 Canvas(
                     modifier = Modifier
                         .size(128.dp)
-                        .graphicsLayer { rotationZ = rotationAngle }
+                        .graphicsLayer { rotationZ = rotationAngle() }
                 ) {
                     val radius = size.minDimension / 2f
                     val center = Offset(size.width / 2f, size.height / 2f)
@@ -1470,7 +1616,7 @@ fun TurntableDeckView(
                 Box(
                     modifier = Modifier
                         .size(56.dp)
-                        .graphicsLayer { rotationZ = rotationAngle }
+                        .graphicsLayer { rotationZ = rotationAngle() }
                         .clip(CircleShape)
                         .background(Color(activeTrack.colorHex)),
                     contentAlignment = Alignment.Center
@@ -1594,11 +1740,77 @@ fun TurntableDeckView(
             }
         }
 
-        // Lower Deck Section: Audio Preview / 1-Click Launch / 5 Continuous Glyph Buttons
+        // Lower Deck Section: Audio Preview / 1-Click Launch / Proof-of-Music / Reactions
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            // A0. PROOF-OF-MUSIC / VENUE CAPSULE CARD
+            if (activeTrack.isCapsule) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (activeTrack.isUnlocked) Color(0xFF241C0F) else Color(0xFF221316),
+                    border = BorderStroke(1.dp, if (activeTrack.isUnlocked) Color(0xFFFFB800) else Color(0xFFFF5533).copy(alpha = 0.85f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalArrangement = Arrangement.spacedBy(3.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = if (activeTrack.isUnlocked) "🔓 ✦" else "🔒",
+                                fontSize = 12.5.sp
+                            )
+                            Text(
+                                text = if (activeTrack.isVenue) {
+                                    if (activeTrack.isUnlocked) "АКУСТИЧЕСКИЙ ПАРОЛЬ СОВПАЛ" else "ЗВУКОВОЙ ЗАМОК ЗАПЕРТ"
+                                } else {
+                                    "ВИНИЛОВЫЙ ТАЙНИК КВАРТАЛА"
+                                },
+                                color = if (activeTrack.isUnlocked) Color(0xFFFFB800) else Color(0xFFFF7755),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.6.sp
+                            )
+                            if (activeTrack.minResonance > 0) {
+                                Spacer(modifier = Modifier.weight(1f))
+                                Text(
+                                    text = "Порог: ${activeTrack.minResonance}%",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                        if (activeTrack.isVenue && activeTrack.secretPerk.isNotBlank()) {
+                            if (activeTrack.isUnlocked) {
+                                Text(
+                                    text = "🎁 ${activeTrack.secretPerk}",
+                                    color = Color(0xFFFFE082),
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            } else {
+                                Text(
+                                    text = "Включите созвучный трек (резонанс ≥ ${activeTrack.minResonance}%), чтобы открыть замок и комплимент локации.",
+                                    color = Color(0xFF94A3B8),
+                                    fontSize = 11.sp
+                                )
+                            }
+                        } else if (activeTrack.observation.isNotBlank()) {
+                            Text(
+                                text = "«${activeTrack.observation}»",
+                                color = Color(0xFFE2E8F0),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+                }
+            }
+
             // A1. In-App Online Audio Preview Button (Слушать соседа прямо сейчас!)
             if (!mediaInfo.previewAudioUrl.isNullOrBlank()) {
                 Surface(

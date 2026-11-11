@@ -55,6 +55,9 @@ data class EchoCapsule(
     val compatibility: Int,
     val isVenue: Boolean = false,
     val venueName: String = "",
+    val minResonance: Int = 0,
+    val secretPerk: String = "",
+    val isUnlocked: Boolean = true,
     val createdAt: Long = 0L
 )
 
@@ -329,6 +332,11 @@ object EchoStateRepository {
                         distM < 120 -> "~$distM м"
                         else -> "~$distM м (размыто)"
                     }
+                    val compPercent = c.optInt("compatibilityPercent", 90)
+                    val minRes = c.optInt("minResonance", 0)
+                    val perk = c.optString("secretPerk", "")
+                    val isUnl = minRes <= 0 || compPercent >= minRes
+
                     capsList.add(
                         EchoCapsule(
                             id = c.optString("id", ""),
@@ -342,9 +350,12 @@ object EchoStateRepository {
                             distanceLabel = distLabel,
                             angleDeg = c.optDouble("angleDegrees", 120.0).toFloat(),
                             ringFactor = c.optDouble("distanceRatio", 0.5).toFloat(),
-                            compatibility = c.optInt("compatibilityPercent", 90),
+                            compatibility = compPercent,
                             isVenue = c.optBoolean("isVenue", false),
                             venueName = c.optString("venueName", ""),
+                            minResonance = minRes,
+                            secretPerk = perk,
+                            isUnlocked = isUnl,
                             createdAt = c.optLong("createdAt", 0L)
                         )
                     )
@@ -457,6 +468,10 @@ object EchoStateRepository {
         title: String,
         secretMessage: String,
         zoneName: String = "Вечерняя улица",
+        isVenue: Boolean = false,
+        venueName: String = "",
+        minResonance: Int = 0,
+        secretPerk: String = "",
         onComplete: (Boolean) -> Unit = {}
     ) {
         val url = buildUrl("/api/drop_capsule")
@@ -472,7 +487,10 @@ object EchoStateRepository {
                 put("title", title)
                 put("secretMessage", secretMessage)
                 put("zoneName", zoneName)
-                put("isVenue", false)
+                put("isVenue", isVenue)
+                put("venueName", venueName)
+                put("minResonance", minResonance)
+                put("secretPerk", secretPerk)
             }.toString()
 
             val token = _echoToken.value
