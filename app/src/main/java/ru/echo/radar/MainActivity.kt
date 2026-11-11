@@ -75,11 +75,11 @@ object EchoTokens {
 // =============================================================
 // NAVIGATION DESTINATIONS (Раздел 3 и 4 ТЗ)
 // =============================================================
-enum class EchoScreen(val label: String, val iconSymbol: String) {
-    ETHER("Эфир", "∿"),
-    DECK("Дека", "💽"),
-    ECHOES("Отзвуки", "📜"),
-    CACHES("Тайники", "⏳")
+enum class EchoScreen(val label: String) {
+    ETHER("ЭФИР"),
+    DECK("ДЕКА"),
+    ECHOES("ОТЗВУКИ"),
+    CACHES("ТАЙНИКИ")
 }
 
 // =============================================================
@@ -87,6 +87,7 @@ enum class EchoScreen(val label: String, val iconSymbol: String) {
 // =============================================================
 sealed interface EchoSheetState {
     object None : EchoSheetState
+    object SonarLegend : EchoSheetState
     data class CuratorStory(val track: VinylTrack) : EchoSheetState
     data class LagrangeDetail(val info: LagrangePointInfo) : EchoSheetState
     data class CoverZoom(val coverUrl: String, val title: String, val artist: String) : EchoSheetState
@@ -242,8 +243,6 @@ fun EchoAppRoot() {
     val capsules by EchoStateRepository.capsules.collectAsState()
     val isPresenceActive by EchoStateRepository.presenceActive.collectAsState()
     val connectionStatusStr by EchoStateRepository.connectionStatus.collectAsState()
-    val incomingReaction by EchoStateRepository.incomingReaction.collectAsState()
-    val serverHost by EchoStateRepository.serverHost.collectAsState()
 
     // Сенсорный купол ночи (Аргон & ChatGPT)
     val thermalPatches by EchoStateRepository.thermalPatches.collectAsState()
@@ -269,7 +268,7 @@ fun EchoAppRoot() {
         list
     }
 
-    // Выбранная пластинка на деке
+    // Выбранная пластинка на деке (единое понятие «выбранный резонанс»)
     var selectedVinyl by remember { mutableStateOf<VinylTrack?>(null) }
 
     LaunchedEffect(allVinyls, currentPlayingTrack) {
@@ -301,8 +300,8 @@ fun EchoAppRoot() {
     // Анимация пульса неона (GPU)
     val infiniteTransition = rememberInfiniteTransition(label = "pulse")
     val neonPulse by infiniteTransition.animateFloat(
-        initialValue = 0.88f,
-        targetValue = 1.15f,
+        initialValue = 0.90f,
+        targetValue = 1.12f,
         animationSpec = infiniteRepeatable(
             animation = tween(2400, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -310,7 +309,7 @@ fun EchoAppRoot() {
         label = "neonPulse"
     )
 
-    // Фотонный луч сонара (1 оборот за 6 секунд, ТЗ раздел 3)
+    // Фотонный луч сонара (1 оборот за 6 секунд, тонкий луч)
     val laserPhotonProgress by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
@@ -323,7 +322,7 @@ fun EchoAppRoot() {
 
     // Непрерывный угол вращения винила (ТЗ раздел 7)
     var platterAngle by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(isAudioPlaying) {
+    LaunchedEffect(isAudioPlaying, currentScreen) {
         while (true) {
             platterAngle = VinylRotationEngine.getContinuousAngle(isAudioPlaying || currentScreen == EchoScreen.DECK)
             delay(16) // ~60 FPS
@@ -343,7 +342,7 @@ fun EchoAppRoot() {
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(feedbackMessage) {
         if (feedbackMessage != null) {
-            delay(3200)
+            delay(3000)
             feedbackMessage = null
         }
     }
@@ -354,7 +353,7 @@ fun EchoAppRoot() {
             .background(EchoTokens.Background)
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Контент текущего экрана (с плавным fade + vertical slide переходом 200ms)
+            // Контент текущего экрана (с плавным fade + vertical slide переходом 180ms)
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -363,7 +362,7 @@ fun EchoAppRoot() {
                 AnimatedContent(
                     targetState = currentScreen,
                     transitionSpec = {
-                        (fadeIn(animationSpec = tween(180)) + slideInVertically(animationSpec = tween(180)) { 24 })
+                        (fadeIn(animationSpec = tween(180)) + slideInVertically(animationSpec = tween(180)) { 20 })
                             .togetherWith(fadeOut(animationSpec = tween(140)))
                     },
                     label = "screen_transition"
@@ -379,7 +378,6 @@ fun EchoAppRoot() {
                                 isDawnMode = isDawnMode,
                                 isPresenceActive = isPresenceActive,
                                 nearbySignalsCount = nearbySignals.size,
-                                connectionStatusStr = connectionStatusStr,
                                 neonPulse = neonPulse,
                                 laserPhotonProgress = laserPhotonProgress,
                                 onSelectVinyl = { vinyl ->
@@ -407,6 +405,9 @@ fun EchoAppRoot() {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     EchoStateRepository.togglePresence()
                                 },
+                                onOpenLegend = {
+                                    sheetState = EchoSheetState.SonarLegend
+                                },
                                 onLagrangeClicked = {
                                     if (lagrangePoint != null) {
                                         sheetState = EchoSheetState.LagrangeDetail(lagrangePoint!!)
@@ -426,12 +427,14 @@ fun EchoAppRoot() {
                             DeckScreen(
                                 activeTrack = activeTrack,
                                 mediaInfo = trackMediaInfo,
-                                isSpinning = true,
+                                isSpinning = isAudioPlaying,
                                 rotationAngle = { platterAngle },
                                 isAudioPlaying = isAudioPlaying,
                                 isAudioLoading = isAudioLoading,
                                 isNeedleSynced = isNeedleSynced,
-                                onToggleAudioPreview = {
+                                onMainPlayPauseToggle = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    EchoSoundManager.playNeedleDrop()
                                     EchoAudioPlayer.toggle(activeTrack.artist, activeTrack.title, trackMediaInfo.previewAudioUrl)
                                 },
                                 onOpenCoverZoom = {
@@ -479,7 +482,6 @@ fun EchoAppRoot() {
 
                         EchoScreen.ECHOES -> {
                             EchoesScreen(
-                                activeTrackMediaInfo = trackMediaInfo,
                                 onPlayTrack = { track ->
                                     EchoAudioPlayer.toggle(track.artist, track.title, track.coverUrl)
                                 },
@@ -509,7 +511,7 @@ fun EchoAppRoot() {
                 }
             }
 
-            // Компактный Mini Player (ТЗ раздел 5: скрыт на экране DECK, отображается на остальных)
+            // Компактный Mini Player (скрыт на экране DECK, отображается на ETHER, ECHOES, CACHES)
             if (currentScreen != EchoScreen.DECK) {
                 MiniPlayer(
                     activeTrack = activeTrack,
@@ -526,7 +528,7 @@ fun EchoAppRoot() {
                 )
             }
 
-            // Постоянный Navigation Dock (ТЗ раздел 4: 4 пункта, высота 64 dp)
+            // Постоянный Navigation Dock (с векторными иконками вместо эмодзи)
             NavigationDock(
                 currentScreen = currentScreen,
                 onScreenSelected = { screen ->
@@ -537,7 +539,7 @@ fun EchoAppRoot() {
             )
         }
 
-        // Всплывающая плашка обратной связи (Toast)
+        // Всплывающее уведомление (Toast)
         feedbackMessage?.let { msg ->
             Surface(
                 shape = RoundedCornerShape(16.dp),
@@ -584,19 +586,19 @@ fun EtherScreen(
     isDawnMode: Boolean,
     isPresenceActive: Boolean,
     nearbySignalsCount: Int,
-    connectionStatusStr: String,
     neonPulse: Float,
     laserPhotonProgress: Float,
     onSelectVinyl: (VinylTrack) -> Unit,
     onVinylLongClicked: (VinylTrack) -> Unit,
     onMapLongPressed: (Float, Float) -> Unit,
     onTogglePresence: () -> Unit,
+    onOpenLegend: () -> Unit,
     onLagrangeClicked: () -> Unit,
     onOpenDeck: () -> Unit,
     onOpenServerSettings: () -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
-        // Header (ТЗ раздел 3: Логотип, NIGHT / PRESENCE, статус эфира)
+        // Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -636,7 +638,7 @@ fun EtherScreen(
                             .background(if (isPresenceActive) EchoTokens.SignalCyan else Color(0xFF64748B))
                     )
                     Text(
-                        text = if (nearbySignalsCount > 0) "$nearbySignalsCount в квартале" else "Ночной покой",
+                        text = if (nearbySignalsCount > 0) "$nearbySignalsCount сигналов поблизости" else "Ночной покой",
                         color = EchoTokens.TextSecondary,
                         fontSize = 11.sp
                     )
@@ -663,6 +665,20 @@ fun EtherScreen(
                     )
                 }
 
+                // Кнопка цветовой легенды сонара
+                Surface(
+                    shape = CircleShape,
+                    color = EchoTokens.Surface,
+                    border = BorderStroke(1.dp, EchoTokens.Divider),
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clickable { onOpenLegend() }
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(text = "ℹ", color = EchoTokens.SignalCyan, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
                 // Индикатор сервера / настройки
                 Surface(
                     shape = CircleShape,
@@ -679,7 +695,7 @@ fun EtherScreen(
             }
         }
 
-        // Полноэкранный холст сонара (ТЗ: SonarCanvas занимает максимум доступного пространства)
+        // Полноэкранный холст сонара
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -705,22 +721,27 @@ fun EtherScreen(
             )
         }
 
-        // Нижняя полоса статуса резонанса (ТЗ раздел 3: ResonanceStatusPanel)
+        // Нижняя карточка статуса резонанса (компактная, без дублирования трека с MiniPlayer)
         Surface(
-            shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
-            color = EchoTokens.Surface.copy(alpha = 0.95f),
+            shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp),
+            color = EchoTokens.Surface.copy(alpha = 0.96f),
             border = BorderStroke(1.dp, EchoTokens.Divider),
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(72.dp)
         ) {
             Row(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .fillMaxSize()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 if (selectedVinyl != null && !selectedVinyl.isSelf) {
-                    Column(modifier = Modifier.weight(1f)) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.Center
+                    ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -732,20 +753,18 @@ fun EtherScreen(
                                     .background(EchoTokens.SignalCyan)
                             )
                             Text(
-                                text = "${selectedVinyl.compatibility}% РЕЗОНАНС • ${selectedVinyl.distanceLabel}",
+                                text = "${selectedVinyl.compatibility}% РЕЗОНАНС · ${selectedVinyl.distanceLabel}",
                                 color = EchoTokens.SignalCyan,
-                                fontSize = 10.5.sp,
+                                fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 0.8.sp
                             )
                         }
                         Text(
-                            text = "${selectedVinyl.title} — ${selectedVinyl.artist}",
-                            color = EchoTokens.TextPrimary,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            text = if (selectedVinyl.isCapsule) "Звуковой тайник в секторе" else "Созвучный слушатель поблизости",
+                            color = EchoTokens.TextSecondary,
+                            fontSize = 11.5.sp,
+                            maxLines = 1
                         )
                     }
 
@@ -772,7 +791,7 @@ fun EtherScreen(
                     ) {
                         Text(text = "✦", color = EchoTokens.SignalCyan, fontSize = 12.sp)
                         Text(
-                            text = "Ночной эфир чист • Коснитесь винила на радаре для фокусировки",
+                            text = "Ночной эфир чист • Коснитесь сигнала на сонаре для фокусировки",
                             color = EchoTokens.TextSecondary,
                             fontSize = 11.5.sp
                         )
@@ -795,7 +814,7 @@ fun DeckScreen(
     isAudioPlaying: Boolean,
     isAudioLoading: Boolean,
     isNeedleSynced: Boolean,
-    onToggleAudioPreview: () -> Unit,
+    onMainPlayPauseToggle: () -> Unit,
     onOpenCoverZoom: () -> Unit,
     onOpenInMusicApp: () -> Unit,
     onSyncNeedle: () -> Unit,
@@ -811,11 +830,11 @@ fun DeckScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 12.dp),
+            .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Header DECK / PLAYBACK
+        // A. Header (строго ДЕКА / ANALOG PLAYBACK / 001, без показателей сонара)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -823,16 +842,18 @@ fun DeckScreen(
         ) {
             Column {
                 Text(
-                    text = "DECK / PLAYBACK",
+                    text = "ДЕКА",
                     color = EchoTokens.TextPrimary,
-                    fontSize = 18.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp
+                    letterSpacing = 1.5.sp
                 )
                 Text(
-                    text = if (activeTrack.isSelf) "Ваш винил звучит в ночи" else "${activeTrack.compatibility}% резонанс • ${activeTrack.distanceLabel}",
-                    color = EchoTokens.SkyBlue,
-                    fontSize = 11.5.sp
+                    text = "ANALOG PLAYBACK / 001",
+                    color = EchoTokens.TextSecondary,
+                    fontSize = 9.5.sp,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 1.sp
                 )
             }
 
@@ -854,23 +875,16 @@ fun DeckScreen(
             }
         }
 
-        // Большой виниловый диск с тонармом (ТЗ раздел 3: максимум около 65% ширины)
+        // B. Большой виниловый диск с тонармом (~240 dp)
         Box(
             modifier = Modifier
-                .size(230.dp)
-                .clickable {
-                    if (!mediaInfo.previewAudioUrl.isNullOrBlank()) {
-                        onToggleAudioPreview()
-                    } else {
-                        onOpenCoverZoom()
-                    }
-                },
+                .size(240.dp)
+                .clickable { onMainPlayPauseToggle() },
             contentAlignment = Alignment.Center
         ) {
-            // Колодец диска
             Box(
                 modifier = Modifier
-                    .size(228.dp)
+                    .size(238.dp)
                     .clip(CircleShape)
                     .background(Color(0xFF07090E))
             )
@@ -878,7 +892,7 @@ fun DeckScreen(
             // Вращающийся винил
             Canvas(
                 modifier = Modifier
-                    .size(220.dp)
+                    .size(230.dp)
                     .graphicsLayer { rotationZ = rotationAngle() }
             ) {
                 val radius = size.minDimension / 2f
@@ -886,10 +900,10 @@ fun DeckScreen(
 
                 drawCircle(color = Color(0xFF13171F), radius = radius, center = center)
 
-                for (g in 1..7) {
+                for (g in 1..8) {
                     drawCircle(
                         color = Color(0xFF222B3A).copy(alpha = 0.7f),
-                        radius = radius * (0.35f + g * 0.08f),
+                        radius = radius * (0.35f + g * 0.075f),
                         center = center,
                         style = Stroke(width = 0.9.dp.toPx())
                     )
@@ -914,7 +928,7 @@ fun DeckScreen(
             // Центральный лейбл с обложкой
             Box(
                 modifier = Modifier
-                    .size(92.dp)
+                    .size(96.dp)
                     .graphicsLayer { rotationZ = rotationAngle() }
                     .clip(CircleShape)
                     .background(Color(activeTrack.colorHex))
@@ -953,15 +967,15 @@ fun DeckScreen(
             TonearmOverlay(isSpinning = isSpinning)
         }
 
-        // Метаданные трека (Крупные, читаемые, чистые)
+        // C. Метаданные трека
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            verticalArrangement = Arrangement.spacedBy(3.dp)
         ) {
             Text(
                 text = activeTrack.title,
                 color = EchoTokens.TextPrimary,
-                fontSize = 20.sp,
+                fontSize = 21.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
@@ -978,134 +992,114 @@ fun DeckScreen(
                 overflow = TextOverflow.Ellipsis
             )
 
-            // Акустические метрики трека (BPM / Camelot / Genre)
-            if (activeTrack.bpm > 0) {
-                Text(
-                    text = "♩ ${activeTrack.bpm} BPM • Camelot ${activeTrack.camelotKey} • ${activeTrack.genre}",
-                    color = EchoTokens.TextSecondary,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    letterSpacing = 0.8.sp
-                )
-            }
-
             if (isNeedleSynced) {
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = EchoTokens.Gold.copy(alpha = 0.16f),
-                    border = BorderStroke(1.dp, EchoTokens.Gold.copy(alpha = 0.7f))
+                    border = BorderStroke(1.dp, EchoTokens.Gold.copy(alpha = 0.7f)),
+                    modifier = Modifier.padding(top = 2.dp)
                 ) {
                     Text(
                         text = "🪡 СИНХРОН ИГЛЫ АКТИВЕН",
                         color = EchoTokens.Gold,
-                        fontSize = 9.5.sp,
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                     )
                 }
             }
+        }
 
-            // Поэтическая персона куратора
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = EchoTokens.Surface,
-                border = BorderStroke(0.8.dp, EchoTokens.Divider),
-                modifier = Modifier.clickable { onOpenCuratorStory() }
+        // D. Акустические метрики в 3 аппаратных блока (BPM / CAMELOT / GENRE)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            MetricBlock(value = "${activeTrack.bpm}", label = "BPM")
+            MetricBlock(value = activeTrack.camelotKey, label = "CAMELOT")
+            MetricBlock(value = activeTrack.genre.uppercase(), label = "GENRE")
+        }
+
+        // E. ГЛАВНАЯ ЦЕНТРАЛЬНАЯ КНОПКА ВОСПРОИЗВЕДЕНИЯ (Play/Pause)
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = if (isAudioPlaying) EchoTokens.SignalCyan.copy(alpha = 0.16f) else EchoTokens.SurfaceElevated,
+            border = BorderStroke(1.5.dp, EchoTokens.SignalCyan),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .clickable { onMainPlayPauseToggle() }
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(text = "✦", color = EchoTokens.SignalCyan, fontSize = 11.sp)
+                Text(
+                    text = if (isAudioLoading) "⏳" else if (isAudioPlaying) "⏸" else "▶",
+                    color = EchoTokens.SignalCyan,
+                    fontSize = 20.sp
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
                     Text(
-                        text = activeTrack.poeticPersona,
-                        color = EchoTokens.TextPrimary,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        text = if (isAudioLoading) "ЗАГРУЗКА ЭФИРА..." else if (isAudioPlaying) "PAUSE" else "PLAY",
+                        color = EchoTokens.SignalCyan,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.2.sp
+                    )
+                    Text(
+                        text = "ОСНОВНОЕ УПРАВЛЕНИЕ",
+                        color = EchoTokens.TextSecondary,
+                        fontSize = 8.5.sp,
+                        letterSpacing = 0.8.sp
                     )
                 }
             }
         }
 
-        // Если это тайник: карточка Proof-of-Music
-        if (activeTrack.isCapsule) {
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = if (activeTrack.isUnlocked) Color(0xFF241C0F) else Color(0xFF221316),
-                border = BorderStroke(1.dp, if (activeTrack.isUnlocked) EchoTokens.VinylAmber else EchoTokens.WarningRed.copy(alpha = 0.85f)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(text = if (activeTrack.isUnlocked) "🔓 ✦" else "🔒", fontSize = 13.sp)
-                        Text(
-                            text = if (activeTrack.isVenue) {
-                                if (activeTrack.isUnlocked) "АКУСТИЧЕСКИЙ ПАРОЛЬ СОВПАЛ" else "ЗВУКОВОЙ ЗАМОК ЗАПЕРТ"
-                            } else "ВИНИЛОВЫЙ ТАЙНИК КВАРТАЛА",
-                            color = if (activeTrack.isUnlocked) EchoTokens.VinylAmber else EchoTokens.WarningRed,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    if (activeTrack.secretPerk.isNotBlank()) {
-                        Text(
-                            text = "🎁 ${activeTrack.secretPerk}",
-                            color = Color(0xFFFFE082),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            }
-        }
-
-        // Невербальный этикет (Синхрон иглы & Камень в воду)
+        // F. Тактильные действия второго уровня (Needle Sync & Камень в воду)
         if (!activeTrack.isSelf) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     color = if (isNeedleSynced) EchoTokens.Gold.copy(alpha = 0.18f) else EchoTokens.Surface,
-                    border = BorderStroke(1.dp, if (isNeedleSynced) EchoTokens.Gold else EchoTokens.Gold.copy(alpha = 0.45f)),
+                    border = BorderStroke(1.2.dp, if (isNeedleSynced) EchoTokens.Gold else EchoTokens.Gold.copy(alpha = 0.5f)),
                     modifier = Modifier
                         .weight(1f)
-                        .height(38.dp)
+                        .height(46.dp)
                         .clickable { onSyncNeedle() }
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
                             text = if (isNeedleSynced) "🪡 Игла в унисоне" else "🪡 Синхрон иглы",
                             color = EchoTokens.Gold,
-                            fontSize = 11.5.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
                 }
 
                 Surface(
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(14.dp),
                     color = EchoTokens.Surface,
-                    border = BorderStroke(1.dp, EchoTokens.SignalCyan.copy(alpha = 0.45f)),
+                    border = BorderStroke(1.2.dp, EchoTokens.SignalCyan.copy(alpha = 0.5f)),
                     modifier = Modifier
                         .weight(1f)
-                        .height(38.dp)
+                        .height(46.dp)
                         .clickable { onSendWaveImpulse() }
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Text(
                             text = "🌊 Камень в воду",
                             color = EchoTokens.SignalCyan,
-                            fontSize = 11.5.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
                     }
@@ -1113,99 +1107,89 @@ fun DeckScreen(
             }
         }
 
-        // Компактные кнопки управления аудио (Transport Controls)
-        Row(
+        // G. Дополнительные действия (третий уровень)
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (!mediaInfo.previewAudioUrl.isNullOrBlank()) {
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = if (isAudioPlaying) EchoTokens.SignalCyan.copy(alpha = 0.16f) else EchoTokens.Surface,
-                    border = BorderStroke(1.dp, if (isAudioPlaying) EchoTokens.SignalCyan else EchoTokens.Divider),
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(40.dp)
-                        .clickable { onToggleAudioPreview() }
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Text(
-                            text = if (isAudioLoading) "⏳ Загрузка..." else if (isAudioPlaying) "⏸ 30 сек" else "♫ Превью 30с",
-                            color = if (isAudioPlaying) EchoTokens.SignalCyan else EchoTokens.TextPrimary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
-
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = EchoTokens.Surface,
-                border = BorderStroke(1.dp, EchoTokens.Divider),
-                modifier = Modifier
-                    .then(if (!mediaInfo.previewAudioUrl.isNullOrBlank()) Modifier.weight(1f) else Modifier.fillMaxWidth())
-                    .height(40.dp)
-                    .clickable { onOpenInMusicApp() }
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "↗ ${activeTrack.sourceApp}",
-                        color = EchoTokens.SkyBlue,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-
-        // Тактильная пара отклика («Спасибо за звук» + «В летопись ночи»)
-        if (!activeTrack.isSelf) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Превью 30 сек
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(12.dp),
                     color = EchoTokens.Surface,
-                    border = BorderStroke(1.dp, EchoTokens.PurpleResonance.copy(alpha = 0.65f)),
+                    border = BorderStroke(1.dp, EchoTokens.Divider),
                     modifier = Modifier
                         .weight(1f)
-                        .height(46.dp)
-                        .clickable { onSendThankYou() }
+                        .height(38.dp)
+                        .clickable { onMainPlayPauseToggle() }
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ) {
-                        Text(text = "∿ Спасибо за звук", color = EchoTokens.TextPrimary, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(text = "♫ Превью 30с", color = EchoTokens.TextPrimary, fontSize = 11.5.sp)
                     }
                 }
 
+                // Открыть источник (человеческое название вместо «ПК Chrome»)
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
+                    shape = RoundedCornerShape(12.dp),
                     color = EchoTokens.Surface,
-                    border = BorderStroke(1.dp, EchoTokens.VinylAmber.copy(alpha = 0.65f)),
+                    border = BorderStroke(1.dp, EchoTokens.Divider),
                     modifier = Modifier
                         .weight(1f)
-                        .height(46.dp)
-                        .clickable { onSaveToChronicle() }
+                        .height(38.dp)
+                        .clickable { onOpenInMusicApp() }
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
+                    Box(contentAlignment = Alignment.Center) {
+                        val sourceLabel = when {
+                            activeTrack.sourceApp.contains("VK", ignoreCase = true) -> "VK Музыка"
+                            activeTrack.sourceApp.contains("Яндекс", ignoreCase = true) || activeTrack.sourceApp.contains("Yandex", ignoreCase = true) -> "Яндекс Музыка"
+                            activeTrack.sourceApp.contains("Spotify", ignoreCase = true) -> "Spotify"
+                            else -> "Открыть источник"
+                        }
+                        Text(text = "↗ $sourceLabel", color = EchoTokens.SkyBlue, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+
+            if (!activeTrack.isSelf) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = EchoTokens.Surface,
+                        border = BorderStroke(1.dp, EchoTokens.PurpleResonance.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp)
+                            .clickable { onSendThankYou() }
                     ) {
-                        Text(text = "📜 В летопись ночи", color = EchoTokens.VinylAmber, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold)
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(text = "∿ Спасибо за звук", color = EchoTokens.TextPrimary, fontSize = 11.5.sp)
+                        }
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = EchoTokens.Surface,
+                        border = BorderStroke(1.dp, EchoTokens.VinylAmber.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(38.dp)
+                            .clickable { onSaveToChronicle() }
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(text = "📜 В летопись ночи", color = EchoTokens.VinylAmber, fontSize = 11.5.sp)
+                        }
                     }
                 }
             }
         }
 
-        // Раскрываемая секция Signal Details (ТЗ раздел 3)
+        // H. Акустический паспорт (Signal Details)
         Surface(
             shape = RoundedCornerShape(14.dp),
             color = EchoTokens.Surface,
@@ -1221,7 +1205,7 @@ fun DeckScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "SIGNAL DETAILS / АКУСТИЧЕСКИЙ ПАСПОРТ",
+                        text = "АКУСТИЧЕСКИЙ ПАСПОРТ",
                         color = EchoTokens.TextSecondary,
                         fontSize = 10.5.sp,
                         fontFamily = FontFamily.Monospace,
@@ -1258,19 +1242,58 @@ fun DeckScreen(
     }
 }
 
+@Composable
+fun MetricBlock(value: String, label: String) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(2.dp)
+    ) {
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = EchoTokens.SurfaceElevated,
+            border = BorderStroke(1.dp, EchoTokens.Divider),
+            modifier = Modifier.width(88.dp).height(38.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    text = value,
+                    color = EchoTokens.SignalCyan,
+                    fontSize = 13.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+        Text(
+            text = label,
+            color = EchoTokens.TextSecondary,
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace,
+            letterSpacing = 0.8.sp
+        )
+    }
+}
+
 // =============================================================
 // SCREEN 03 — ECHOES / ОТЗВУКИ (АРХИВ НОЧНЫХ СОБЫТИЙ)
 // =============================================================
 @Composable
 fun EchoesScreen(
-    activeTrackMediaInfo: TrackMediaInfo,
     onPlayTrack: (ChronicleTrackRecord) -> Unit,
     onOpenInMusicApp: (ChronicleTrackRecord) -> Unit,
     onOpenCuratorStory: (VinylTrack) -> Unit
 ) {
-    var selectedFilter by remember { mutableIntStateOf(0) } // 0: Созвучия, 1: Пойманные волны, 2: Истории куратора
+    var selectedFilter by remember { mutableIntStateOf(0) } // 0: Созвучия, 1: Волны, 2: Истории
     val savedTracks = EchoChronicleManager.savedTracks
     val incomingEchoes = EchoChronicleManager.incomingEchoes
+
+    val sampleCuratorStories = remember {
+        listOf(
+            VinylTrack("cur_1", "Судно", "Молчат Дома", "VK Музыка", "~75 м", "Пилигрим неоновых панелек", "Холодный пост-панк на перекрёстке ночного спального района.", "Резонанс панельных высоток и синти-попа.", 88, 45f, 0.5f, 0xFF00F0FFL),
+            VinylTrack("cur_2", "The Darkest Hours", "E-Mantra", "Яндекс.Музыка", "~120 м", "Ловец низких частот", "Глубокий эмбиент, пульсирующий в такт ночной реке.", "Гармонический мост через колесо Камелота 8A.", 92, 120f, 0.7f, 0xFFFFB800L),
+            VinylTrack("cur_3", "Midnight City", "M83", "Spotify", "~190 м", "Хранитель бессонницы", "Звёздный свет отражается в мокром асфальте набережной.", "Октавный резонанс на темпе 105 BPM.", 84, 210f, 0.8f, 0xFFA855F7L)
+        )
+    }
 
     LaunchedEffect(Unit) {
         EchoChronicleManager.markAllRead()
@@ -1285,20 +1308,22 @@ fun EchoesScreen(
         // Header
         Column {
             Text(
-                text = "ECHOES / АРХИВ НОЧИ",
+                text = "ОТЗВУКИ",
                 color = EchoTokens.TextPrimary,
-                fontSize = 18.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = 1.2.sp
+                letterSpacing = 1.5.sp
             )
             Text(
-                text = "Эхо ночных встреч, пойманных импульсов и созвучий",
+                text = "ПАМЯТЬ НОЧНЫХ СОЗВУЧИЙ",
                 color = EchoTokens.TextSecondary,
-                fontSize = 11.5.sp
+                fontSize = 9.5.sp,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 1.sp
             )
         }
 
-        // Фильтры (ТЗ раздел 3: Созвучия, Пойманные волны, Истории)
+        // Фильтры
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1307,7 +1332,7 @@ fun EchoesScreen(
                 .padding(3.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            listOf("Созвучия (${savedTracks.size})", "Волны (${incomingEchoes.size})", "Истории").forEachIndexed { index, title ->
+            listOf("Созвучия (${savedTracks.size})", "Волны (${incomingEchoes.size})", "Истории (${sampleCuratorStories.size})").forEachIndexed { index, title ->
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -1327,10 +1352,10 @@ fun EchoesScreen(
             }
         }
 
-        // Списки событий
+        // Списки
         when (selectedFilter) {
             0 -> {
-                // Вкладка 1: Созвучия (сохраненные треки)
+                // Вкладка 1: Созвучия (сохраненные находки)
                 if (savedTracks.isEmpty()) {
                     Box(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -1338,16 +1363,16 @@ fun EchoesScreen(
                     ) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Text(text = "📻", fontSize = 32.sp)
-                            Text(text = "Летопись созвучий пуста", color = EchoTokens.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                            Text(text = "∿", color = EchoTokens.SignalCyan.copy(alpha = 0.5f), fontSize = 36.sp)
+                            Text(text = "ПОКА ТИШИНА", color = EchoTokens.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
                             Text(
-                                text = "Нажмите «В летопись ночи» на пластинке любого слушателя на деке, чтобы сохранить находку.",
+                                text = "Здесь появятся созвучия, которые вы сохраните из ночного эфира клавишей «В летопись ночи».",
                                 color = EchoTokens.TextSecondary,
                                 fontSize = 11.5.sp,
                                 textAlign = TextAlign.Center,
-                                modifier = Modifier.padding(horizontal = 24.dp)
+                                modifier = Modifier.padding(horizontal = 28.dp)
                             )
                         }
                     }
@@ -1405,7 +1430,7 @@ fun EchoesScreen(
             }
 
             1 -> {
-                // Вкладка 2: Пойманные волны (взаимные отклики)
+                // Вкладка 2: Волны (взаимные импульсы)
                 if (incomingEchoes.isEmpty()) {
                     Box(
                         modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -1462,18 +1487,12 @@ fun EchoesScreen(
             }
 
             2 -> {
-                // Вкладка 3: Истории ИИ-куратора
-                val sampleCuratorTracks = listOf(
-                    VinylTrack("story_1", "Судно", "Молчат Дома", "VK Музыка", "~75 м", "Пилигрим неоновых панелек", "Холодный пост-панк на перекрёстке ночного спального района.", "Резонанс панельных высоток и синти-попа.", 88, 45f, 0.5f, 0xFF00F0FFL),
-                    VinylTrack("story_2", "The Darkest Hours", "E-Mantra", "Яндекс.Музыка", "~120 м", "Ловец низких частот", "Глубокий эмбиент, пульсирующий в такт ночной реке.", "Гармонический мост через колесо Камелота 8A.", 92, 120f, 0.7f, 0xFFFFB800L),
-                    VinylTrack("story_3", "Midnight City", "M83", "Spotify", "~190 м", "Хранитель бессонницы", "Звёздный свет отражается в мокром асфальте набережной.", "Октавный резонанс на темпе 105 BPM.", 84, 210f, 0.8f, 0xFFA855F7L)
-                )
-
+                // Вкладка 3: Истории ИИ-куратора (редакционный формат музыкального журнала)
                 LazyColumn(
                     modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    items(sampleCuratorTracks) { curatorTrack ->
+                    items(sampleCuratorStories) { curatorTrack ->
                         Surface(
                             shape = RoundedCornerShape(14.dp),
                             color = EchoTokens.Surface,
@@ -1482,16 +1501,58 @@ fun EchoesScreen(
                                 .fillMaxWidth()
                                 .clickable { onOpenCuratorStory(curatorTrack) }
                         ) {
-                            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Column(
+                                modifier = Modifier.padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
                                 Row(
+                                    modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(text = "✦", color = EchoTokens.SignalCyan, fontSize = 12.sp)
-                                    Text(text = curatorTrack.poeticPersona, color = EchoTokens.SignalCyan, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(text = "✦", color = EchoTokens.SignalCyan, fontSize = 11.sp)
+                                        Text(
+                                            text = curatorTrack.poeticPersona.uppercase(),
+                                            color = EchoTokens.SignalCyan,
+                                            fontSize = 10.5.sp,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 0.8.sp
+                                        )
+                                    }
+                                    Text(text = "СЕГОДНЯ НОЧЬЮ", color = EchoTokens.TextSecondary, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
                                 }
-                                Text(text = "«${curatorTrack.observation}»", color = EchoTokens.TextPrimary, fontSize = 12.5.sp, fontStyle = FontStyle.Italic)
-                                Text(text = "Саундтрек: ${curatorTrack.artist} — ${curatorTrack.title}", color = EchoTokens.TextSecondary, fontSize = 10.5.sp)
+
+                                Text(
+                                    text = "«${curatorTrack.observation}»",
+                                    color = EchoTokens.TextPrimary,
+                                    fontSize = 13.5.sp,
+                                    fontStyle = FontStyle.Italic,
+                                    lineHeight = 18.sp
+                                )
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "♫ ${curatorTrack.artist} — ${curatorTrack.title}",
+                                        color = EchoTokens.SkyBlue,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    Text(
+                                        text = "Читать ↗",
+                                        color = EchoTokens.SignalCyan,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
                             }
                         }
                     }
@@ -1514,47 +1575,54 @@ fun CachesScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        // Header CITY FREQUENCIES
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text(
-                    text = "CITY FREQUENCIES / ТАЙНИКИ",
-                    color = EchoTokens.TextPrimary,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.2.sp
-                )
-                Text(
-                    text = "Звуковые тайники заведений и ночные капсулы",
-                    color = EchoTokens.TextSecondary,
-                    fontSize = 11.5.sp
-                )
-            }
+        // Header
+        Column {
+            Text(
+                text = "ТАЙНИКИ",
+                color = EchoTokens.TextPrimary,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.5.sp
+            )
+            Text(
+                text = "СКРЫТЫЕ МУЗЫКАЛЬНЫЕ МЕСТА ГОРОДА",
+                color = EchoTokens.TextSecondary,
+                fontSize = 9.5.sp,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 1.sp
+            )
+        }
 
-            Surface(
-                shape = RoundedCornerShape(14.dp),
-                color = EchoTokens.VinylAmber.copy(alpha = 0.16f),
-                border = BorderStroke(1.dp, EchoTokens.VinylAmber),
-                modifier = Modifier.clickable { onDropCapsuleClicked() }
+        // Полноразмерная аккуратная кнопка «Оставить капсулу» (без переноса слов!)
+        Surface(
+            shape = RoundedCornerShape(12.dp),
+            color = EchoTokens.VinylAmber.copy(alpha = 0.16f),
+            border = BorderStroke(1.2.dp, EchoTokens.VinylAmber),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(42.dp)
+                .clickable { onDropCapsuleClicked() }
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.Center
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(text = "⏳", fontSize = 12.sp)
-                    Text(text = "Оставить", color = EchoTokens.VinylAmber, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
+                Text(text = "⏳", fontSize = 13.sp)
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "+ ОСТАВИТЬ МУЗЫКАЛЬНУЮ КАПСУЛУ",
+                    color = EchoTokens.VinylAmber,
+                    fontSize = 11.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.8.sp
+                )
             }
         }
 
-        // Акустическая мини-карта (радар тайников)
+        // Секторная схема: Радиус поиска
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = EchoTokens.Surface,
@@ -1568,9 +1636,13 @@ fun CachesScreen(
                     val center = Offset(size.width / 2f, size.height / 2f)
                     val maxR = size.height * 0.42f
 
-                    // Кольца локатора тайников
-                    drawCircle(color = EchoTokens.Divider.copy(alpha = 0.5f), radius = maxR, center = center, style = Stroke(1.dp.toPx()))
-                    drawCircle(color = EchoTokens.Divider.copy(alpha = 0.3f), radius = maxR * 0.6f, center = center, style = Stroke(1.dp.toPx()))
+                    // Кольца дистанции
+                    drawCircle(color = EchoTokens.Divider.copy(alpha = 0.6f), radius = maxR, center = center, style = Stroke(1.dp.toPx()))
+                    drawCircle(color = EchoTokens.Divider.copy(alpha = 0.35f), radius = maxR * 0.5f, center = center, style = Stroke(1.dp.toPx()))
+
+                    // Секторные оси
+                    drawLine(color = EchoTokens.Divider.copy(alpha = 0.3f), start = Offset(center.x - maxR, center.y), end = Offset(center.x + maxR, center.y), strokeWidth = 1.dp.toPx())
+                    drawLine(color = EchoTokens.Divider.copy(alpha = 0.3f), start = Offset(center.x, center.y - maxR), end = Offset(center.x, center.y + maxR), strokeWidth = 1.dp.toPx())
 
                     // Центр пользователя
                     drawCircle(color = EchoTokens.SignalCyan, radius = 4.dp.toPx(), center = center)
@@ -1581,15 +1653,15 @@ fun CachesScreen(
                         val r = maxR * cap.ringFactor.coerceIn(0.2f, 0.95f)
                         val px = center.x + (r * cos(rad)).toFloat()
                         val py = center.y + (r * sin(rad)).toFloat()
-                        val color = if (cap.isVenue) EchoTokens.VinylAmber else EchoTokens.SkyBlue
+                        val color = if (cap.isUnlocked) EchoTokens.VinylAmber else EchoTokens.SkyBlue
                         drawCircle(color = color.copy(alpha = 0.35f), radius = 7.dp.toPx(), center = Offset(px, py))
                         drawCircle(color = color, radius = 3.dp.toPx(), center = Offset(px, py))
                     }
                 }
 
                 Text(
-                    text = "РАДИУС СКАНИРОВАНИЯ: 1 КМ",
-                    color = EchoTokens.TextSecondary.copy(alpha = 0.6f),
+                    text = "РАДИУС ПОИСКА: 1 КМ (250м · 500м · 1000м)",
+                    color = EchoTokens.TextSecondary.copy(alpha = 0.7f),
                     fontSize = 9.sp,
                     fontFamily = FontFamily.Monospace,
                     modifier = Modifier
@@ -1599,7 +1671,7 @@ fun CachesScreen(
             }
         }
 
-        // Список капсул и заведений
+        // Список капсул и заведений с разграничением статусов (AVAILABLE, LOCKED, OPENED)
         if (capsules.isEmpty()) {
             Box(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -1612,7 +1684,7 @@ fun CachesScreen(
                     Text(text = "⏳", fontSize = 32.sp)
                     Text(text = "В этом секторе пока нет тайников", color = EchoTokens.TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
                     Text(
-                        text = "Вы можете оставить свой первый музыкальный тайник для полуночников в кнопке сверху.",
+                        text = "Вы можете оставить первый звуковой тайник для полуночников кнопкой выше.",
                         color = EchoTokens.TextSecondary,
                         fontSize = 11.5.sp,
                         textAlign = TextAlign.Center,
@@ -1626,10 +1698,13 @@ fun CachesScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(capsules) { capsule ->
+                    val isUnlocked = capsule.isUnlocked
+                    val isVenue = capsule.isVenue
+
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = EchoTokens.Surface,
-                        border = BorderStroke(1.dp, if (capsule.isUnlocked) EchoTokens.VinylAmber else EchoTokens.Divider),
+                        border = BorderStroke(1.dp, if (isUnlocked) EchoTokens.VinylAmber else EchoTokens.Divider),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onSelectCapsule(capsule) }
@@ -1643,18 +1718,18 @@ fun CachesScreen(
                                 modifier = Modifier
                                     .size(40.dp)
                                     .clip(CircleShape)
-                                    .background(if (capsule.isUnlocked) EchoTokens.VinylAmber.copy(alpha = 0.16f) else Color(0xFF221316)),
+                                    .background(if (isUnlocked) EchoTokens.VinylAmber.copy(alpha = 0.16f) else Color(0xFF221316)),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = if (capsule.isUnlocked) "🔓" else "🔒",
+                                    text = if (isUnlocked) "🔓" else "🔒",
                                     fontSize = 16.sp
                                 )
                             }
 
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = if (capsule.isVenue) capsule.venueName else capsule.title,
+                                    text = if (isVenue && capsule.venueName.isNotBlank()) capsule.venueName else capsule.title,
                                     color = EchoTokens.TextPrimary,
                                     fontSize = 13.5.sp,
                                     fontWeight = FontWeight.Bold,
@@ -1662,22 +1737,28 @@ fun CachesScreen(
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
-                                    text = "${capsule.artist} — ${capsule.title}",
+                                    text = "♫ ${capsule.artist} — ${capsule.title}",
                                     color = EchoTokens.SkyBlue,
                                     fontSize = 11.5.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
                                 )
-                                if (capsule.isVenue && capsule.secretPerk.isNotBlank()) {
+                                if (isUnlocked && capsule.secretPerk.isNotBlank()) {
                                     Text(
-                                        text = "🎁 ${capsule.secretPerk}",
+                                        text = "🎁 Награда: ${capsule.secretPerk}",
                                         color = EchoTokens.VinylAmber,
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Medium
                                     )
+                                } else if (!isUnlocked && capsule.minResonance > 0) {
+                                    Text(
+                                        text = "🔒 Заперто · Требуется резонанс ≥ ${capsule.minResonance}%",
+                                        color = EchoTokens.TextSecondary,
+                                        fontSize = 10.sp
+                                    )
                                 } else {
                                     Text(
-                                        text = "${capsule.zoneName} • ${capsule.distanceLabel}",
+                                        text = "${capsule.zoneName} · ${capsule.distanceLabel}",
                                         color = EchoTokens.TextSecondary,
                                         fontSize = 10.sp
                                     )
@@ -1699,7 +1780,7 @@ fun CachesScreen(
 }
 
 // =============================================================
-// MINI PLAYER (ТЗ раздел 5: Компактный плеер над Navigation Dock)
+// MINI PLAYER (Компактный плеер над Navigation Dock)
 // =============================================================
 @Composable
 fun MiniPlayer(
@@ -1716,79 +1797,99 @@ fun MiniPlayer(
         border = BorderStroke(1.dp, EchoTokens.Divider),
         modifier = Modifier
             .fillMaxWidth()
-            .height(58.dp)
+            .height(62.dp)
             .clickable { onOpenDeck() }
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            // Вращающийся мини-винил
-            Box(
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
                 modifier = Modifier
-                    .size(38.dp)
-                    .graphicsLayer { rotationZ = rotationAngle() }
-                    .clip(CircleShape)
-                    .background(Color(activeTrack.colorHex)),
-                contentAlignment = Alignment.Center
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                if (!coverUrl.isNullOrBlank()) {
-                    AsyncImage(
-                        model = coverUrl,
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Text(text = "♫", color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                }
+                // Вращающийся мини-винил
                 Box(
                     modifier = Modifier
-                        .size(8.dp)
+                        .size(38.dp)
+                        .graphicsLayer { rotationZ = rotationAngle() }
                         .clip(CircleShape)
-                        .background(Color(0xFFE2E8F0))
-                )
+                        .background(Color(activeTrack.colorHex)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!coverUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = coverUrl,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Text(text = "♫", color = Color.Black, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFFE2E8F0))
+                    )
+                }
+
+                // Метаданные (1 строка: Название трека, 2 строка: Исполнитель • BPM)
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = activeTrack.title,
+                        color = EchoTokens.TextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${activeTrack.artist} • ${activeTrack.bpm} BPM",
+                        color = EchoTokens.SkyBlue,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                // Кнопка Play/Pause
+                IconButton(
+                    onClick = onTogglePlay,
+                    modifier = Modifier.size(38.dp)
+                ) {
+                    Text(
+                        text = if (isAudioPlaying) "⏸" else "▶",
+                        color = EchoTokens.SignalCyan,
+                        fontSize = 16.sp
+                    )
+                }
             }
 
-            // Метаданные
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = activeTrack.title,
-                    color = EchoTokens.TextPrimary,
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${activeTrack.artist} • ${activeTrack.bpm} BPM",
-                    color = EchoTokens.SkyBlue,
-                    fontSize = 10.5.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-
-            // Play / Pause превью кнопка
-            IconButton(
-                onClick = onTogglePlay,
-                modifier = Modifier.size(38.dp)
+            // Тонкий Progress Indicator высотой 2 dp
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .background(EchoTokens.Divider)
             ) {
-                Text(
-                    text = if (isAudioPlaying) "⏸" else "▶",
-                    color = EchoTokens.SignalCyan,
-                    fontSize = 16.sp
-                )
+                if (isAudioPlaying) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(0.45f)
+                            .background(EchoTokens.SignalCyan)
+                    )
+                }
             }
         }
     }
 }
 
 // =============================================================
-// NAVIGATION DOCK (ТЗ раздел 4: Постоянный нижний док)
+// NAVIGATION DOCK (Кастомные векторные иконки вместо эмодзи)
 // =============================================================
 @Composable
 fun NavigationDock(
@@ -1811,6 +1912,8 @@ fun NavigationDock(
         ) {
             EchoScreen.values().forEach { screen ->
                 val isSelected = currentScreen == screen
+                val iconColor = if (isSelected) EchoTokens.SignalCyan else Color(0xFF788695)
+
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -1823,26 +1926,27 @@ fun NavigationDock(
                         verticalArrangement = Arrangement.Center
                     ) {
                         Box {
-                            Text(
-                                text = screen.iconSymbol,
-                                color = if (isSelected) EchoTokens.SignalCyan else EchoTokens.TextSecondary,
-                                fontSize = 17.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
+                            when (screen) {
+                                EchoScreen.ETHER -> NavEtherIcon(color = iconColor)
+                                EchoScreen.DECK -> NavDeckIcon(color = iconColor)
+                                EchoScreen.ECHOES -> NavEchoesIcon(color = iconColor)
+                                EchoScreen.CACHES -> NavCachesIcon(color = iconColor)
+                            }
+
                             if (screen == EchoScreen.ECHOES && hasUnreadChronicle) {
                                 Box(
                                     modifier = Modifier
-                                        .size(6.dp)
+                                        .size(5.dp)
                                         .align(Alignment.TopEnd)
                                         .clip(CircleShape)
                                         .background(EchoTokens.SignalCyan)
                                 )
                             }
                         }
-                        Spacer(modifier = Modifier.height(2.dp))
+                        Spacer(modifier = Modifier.height(3.dp))
                         Text(
                             text = screen.label,
-                            color = if (isSelected) EchoTokens.SignalCyan else EchoTokens.TextSecondary,
+                            color = iconColor,
                             fontSize = 10.5.sp,
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
                         )
@@ -1850,6 +1954,80 @@ fun NavigationDock(
                 }
             }
         }
+    }
+}
+
+// Векторные иконки для навигации
+@Composable
+fun NavEtherIcon(color: Color) {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val center = Offset(size.width / 2f, size.height * 0.7f)
+        drawCircle(color = color, radius = 2.5.dp.toPx(), center = center)
+        drawArc(
+            color = color,
+            startAngle = 205f,
+            sweepAngle = 130f,
+            useCenter = false,
+            topLeft = Offset(center.x - 7.dp.toPx(), center.y - 7.dp.toPx()),
+            size = Size(14.dp.toPx(), 14.dp.toPx()),
+            style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round)
+        )
+        drawArc(
+            color = color.copy(alpha = 0.8f),
+            startAngle = 210f,
+            sweepAngle = 120f,
+            useCenter = false,
+            topLeft = Offset(center.x - 12.dp.toPx(), center.y - 12.dp.toPx()),
+            size = Size(24.dp.toPx(), 24.dp.toPx()),
+            style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round)
+        )
+    }
+}
+
+@Composable
+fun NavDeckIcon(color: Color) {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val radius = size.minDimension / 2f - 1.dp.toPx()
+        drawCircle(color = color, radius = radius, center = center, style = Stroke(width = 1.6.dp.toPx()))
+        drawCircle(color = color.copy(alpha = 0.5f), radius = radius * 0.6f, center = center, style = Stroke(width = 1.dp.toPx()))
+        drawCircle(color = color, radius = 2.dp.toPx(), center = center)
+    }
+}
+
+@Composable
+fun NavEchoesIcon(color: Color) {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val barWidth = 2.dp.toPx()
+        val spacing = 3.5.dp.toPx()
+        val heights = floatArrayOf(0.4f, 0.85f, 0.55f, 0.95f, 0.35f)
+        val startX = (size.width - (heights.size * barWidth + (heights.size - 1) * spacing)) / 2f
+        for (i in heights.indices) {
+            val h = size.height * heights[i]
+            val x = startX + i * (barWidth + spacing)
+            val y = (size.height - h) / 2f
+            drawRoundRect(
+                color = color,
+                topLeft = Offset(x, y),
+                size = Size(barWidth, h),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(1.dp.toPx())
+            )
+        }
+    }
+}
+
+@Composable
+fun NavCachesIcon(color: Color) {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val path = Path().apply {
+            moveTo(size.width / 2f, 2.dp.toPx())
+            lineTo(size.width - 3.dp.toPx(), size.height / 2f)
+            lineTo(size.width / 2f, size.height - 2.dp.toPx())
+            lineTo(3.dp.toPx(), size.height / 2f)
+            close()
+        }
+        drawPath(path = path, color = color, style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round))
+        drawCircle(color = color, radius = 2.2.dp.toPx(), center = Offset(size.width / 2f, size.height / 2f))
     }
 }
 
@@ -1880,7 +2058,7 @@ fun EchoBottomSheetHost(
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Header модалки с крестиком
+                // Header модалки
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -1888,11 +2066,12 @@ fun EchoBottomSheetHost(
                 ) {
                     Text(
                         text = when (sheetState) {
+                            is EchoSheetState.SonarLegend -> "ЛЕГЕНДА СИГНАЛОВ СОНАРА"
                             is EchoSheetState.CuratorStory -> "✦ ИСТОРИЯ КУРАТОРА"
                             is EchoSheetState.LagrangeDetail -> "✦ ТОЧКА ЛАГРАНЖА"
                             is EchoSheetState.CoverZoom -> "ОБЛОЖКА РЕЛИЗА"
                             is EchoSheetState.CapsuleDetail -> "ТАЙНИК ЗАВЕДЕНИЯ"
-                            is EchoSheetState.DropCapsule -> "ОСТАВИТЬ ТАЙНИК"
+                            is EchoSheetState.DropCapsule -> "ОСТАВИТЬ КАПСУЛУ"
                             is EchoSheetState.ServerSettings -> "НАСТРОЙКИ СЕТИ"
                             else -> ""
                         },
@@ -1908,8 +2087,18 @@ fun EchoBottomSheetHost(
                     }
                 }
 
-                // Содержимое модалки
+                // Содержимое
                 when (sheetState) {
+                    is EchoSheetState.SonarLegend -> {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            LegendRow(color = EchoTokens.SignalCyan, title = "Циановый узел", desc = "Ваш личный звуковой маяк или студийный узел ПК в эфире")
+                            LegendRow(color = EchoTokens.Gold, title = "Золотая орбита", desc = "Синхронизация иглы: слушатели, играющие в унисон с вами")
+                            LegendRow(color = EchoTokens.VinylAmber, title = "Янтарный маркер", desc = "Тайники квартала и звуковые капсулы заведений")
+                            LegendRow(color = EchoTokens.PurpleResonance, title = "Пурпурный след", desc = "Одиночные слушатели ночного города")
+                            LegendRow(color = EchoTokens.SkyBlue, title = "Голубая волна", desc = "Гармонический резонанс по колесу Камелота")
+                        }
+                    }
+
                     is EchoSheetState.CuratorStory -> {
                         val track = sheetState.track
                         Text(text = track.poeticPersona, color = EchoTokens.TextPrimary, fontSize = 17.sp, fontWeight = FontWeight.Bold)
@@ -1994,7 +2183,7 @@ fun EchoBottomSheetHost(
                         var titleInput by remember { mutableStateOf("") }
                         var messageInput by remember { mutableStateOf("") }
 
-                        Text(text = "Оставить звуковой тайник", color = EchoTokens.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Text(text = "Оставить звуковую капсулу", color = EchoTokens.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         OutlinedTextField(
                             value = artistInput,
                             onValueChange = { artistInput = it },
@@ -2071,6 +2260,26 @@ fun EchoBottomSheetHost(
     }
 }
 
+@Composable
+fun LegendRow(color: Color, title: String, desc: String) {
+    Row(
+        verticalAlignment = Alignment.Top,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .padding(top = 4.dp)
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(color)
+        )
+        Column {
+            Text(text = title, color = EchoTokens.TextPrimary, fontSize = 12.5.sp, fontWeight = FontWeight.Bold)
+            Text(text = desc, color = EchoTokens.TextSecondary, fontSize = 11.sp, lineHeight = 15.sp)
+        }
+    }
+}
+
 // =============================================================
 // ПРОЦЕДУРНЫЙ СОНАР И КАРТА НОЧНОГО ГОРОДА (VinylCityMapCanvas)
 // =============================================================
@@ -2100,7 +2309,6 @@ fun VinylCityMapCanvas(
                             val center = Offset(size.width / 2f, size.height / 2f)
                             val maxR = minOf(size.width, size.height) * 0.44f
 
-                            // 1. Проверка тапа по Точке Лагранжа
                             if (lagrangePoint != null && lagrangePoint.active) {
                                 val radL = Math.toRadians(lagrangePoint.angleDegrees.toDouble())
                                 val rL = maxR * lagrangePoint.distanceRatio.coerceIn(0.24f, 0.92f)
@@ -2113,7 +2321,6 @@ fun VinylCityMapCanvas(
                                 }
                             }
 
-                            // 2. Проверка тапа по центру (свой винил)
                             val distCenter = sqrt(
                                 (tapOffset.x - center.x) * (tapOffset.x - center.x) +
                                 (tapOffset.y - center.y) * (tapOffset.y - center.y)
@@ -2123,7 +2330,6 @@ fun VinylCityMapCanvas(
                                 return@detectTapGestures
                             }
 
-                            // 3. Проверка тапа по винилам
                             var clickedVinyl: VinylTrack? = null
                             var minDistance = 44.dp.toPx()
 
@@ -2179,24 +2385,29 @@ fun VinylCityMapCanvas(
             val center = Offset(size.width / 2f, size.height / 2f)
             val maxR = minOf(size.width, size.height) * 0.44f
 
-            // A. ПРОЦЕДУРНАЯ КАРТА НОЧНОГО ГОРОДА
+            // 1. Тонкая ненавязчивая водная нить реки (14dp вместо 38dp!)
             val riverPath = Path().apply {
-                moveTo(-50f, size.height * 0.22f)
+                moveTo(-30f, size.height * 0.22f)
                 cubicTo(
-                    size.width * 0.35f, size.height * 0.12f,
-                    size.width * 0.65f, size.height * 0.45f,
-                    size.width + 60f, size.height * 0.38f
+                    size.width * 0.35f, size.height * 0.14f,
+                    size.width * 0.65f, size.height * 0.42f,
+                    size.width + 40f, size.height * 0.36f
                 )
             }
             drawPath(
                 path = riverPath,
-                color = Color(0xFF0D2538).copy(alpha = 0.55f),
-                style = Stroke(width = 38.dp.toPx(), cap = StrokeCap.Round)
+                color = Color(0xFF0B1B2B).copy(alpha = 0.35f),
+                style = Stroke(width = 14.dp.toPx(), cap = StrokeCap.Round)
             )
 
-            // Мосты через реку
-            val bridge1 = Offset(size.width * 0.38f, size.height * 0.17f)
-            drawLine(color = Color(0xFF263346), start = Offset(bridge1.x - 16.dp.toPx(), bridge1.y - 20.dp.toPx()), end = Offset(bridge1.x + 16.dp.toPx(), bridge1.y + 20.dp.toPx()), strokeWidth = 3.dp.toPx())
+            // Мост через реку
+            val bridge1 = Offset(size.width * 0.38f, size.height * 0.18f)
+            drawLine(
+                color = Color(0xFF1E2838),
+                start = Offset(bridge1.x - 10.dp.toPx(), bridge1.y - 12.dp.toPx()),
+                end = Offset(bridge1.x + 10.dp.toPx(), bridge1.y + 12.dp.toPx()),
+                strokeWidth = 2.dp.toPx()
+            )
 
             // Радиальная сетка улиц
             for (ang in listOf(30.0, 75.0, 140.0, 210.0, 260.0, 315.0)) {
@@ -2204,7 +2415,7 @@ fun VinylCityMapCanvas(
                 val ex = center.x + (maxR * 1.15f * cos(rRad)).toFloat()
                 val ey = center.y + (maxR * 1.15f * sin(rRad)).toFloat()
                 drawLine(
-                    color = Color(0xFF141A28).copy(alpha = 0.7f),
+                    color = Color(0xFF141A28).copy(alpha = 0.6f),
                     start = center,
                     end = Offset(ex, ey),
                     strokeWidth = 1.dp.toPx(),
@@ -2212,33 +2423,33 @@ fun VinylCityMapCanvas(
                 )
             }
 
-            // B. КОНЦЕНТРИЧЕСКИЕ КОЛЬЦА СОНАРА
+            // 2. Концентрические кольца сонара
             val ringCount = 4
             for (i in 1..ringCount) {
                 val r = maxR * (i.toFloat() / ringCount)
                 drawCircle(
-                    color = Color(0xFF00F0FF).copy(alpha = 0.08f),
+                    color = Color(0xFF00F0FF).copy(alpha = 0.07f),
                     radius = r,
                     center = center,
                     style = Stroke(width = 1.dp.toPx())
                 )
             }
 
-            // C. СКАНИРУЮЩИЙ ЛУЧ СОНАРА (RADAR SWEEP)
+            // 3. Тонкий сканирующий луч сонара с мягким шлейфом затухания
             val sweepRad = Math.toRadians((laserPhotonProgress * 360f).toDouble())
             val sweepEnd = Offset(center.x + (maxR * cos(sweepRad)).toFloat(), center.y + (maxR * sin(sweepRad)).toFloat())
             drawLine(
                 brush = Brush.linearGradient(
-                    colors = listOf(Color(0xFF00F0FF).copy(alpha = 0.55f), Color.Transparent),
+                    colors = listOf(Color(0xFF00F0FF).copy(alpha = 0.6f), Color.Transparent),
                     start = center,
                     end = sweepEnd
                 ),
                 start = center,
                 end = sweepEnd,
-                strokeWidth = 2.dp.toPx()
+                strokeWidth = 1.5.dp.toPx()
             )
 
-            // D. ТЕПЛОВЫЕ ПЯТНА ДЫХАНИЯ (ThermalBreathLayer)
+            // 4. Тепловые пятна дыхания (ThermalBreathLayer)
             thermalPatches.forEach { patch ->
                 val px = patch.x * size.width
                 val py = patch.y * size.height
@@ -2246,17 +2457,17 @@ fun VinylCityMapCanvas(
                 if (alpha > 0f) {
                     drawCircle(
                         brush = Brush.radialGradient(
-                            colors = listOf(Color(0xFFFF9988).copy(alpha = 0.35f * alpha), Color(0xFFFFB800).copy(alpha = 0.15f * alpha), Color.Transparent),
+                            colors = listOf(Color(0xFFFF9988).copy(alpha = 0.30f * alpha), Color(0xFFFFB800).copy(alpha = 0.12f * alpha), Color.Transparent),
                             center = Offset(px, py),
-                            radius = 48.dp.toPx()
+                            radius = 44.dp.toPx()
                         ),
-                        radius = 48.dp.toPx(),
+                        radius = 44.dp.toPx(),
                         center = Offset(px, py)
                     )
                 }
             }
 
-            // E. ТОЧКА ЛАГРАНЖА (LagrangePoint)
+            // 5. Точка Лагранжа (LagrangePoint)
             if (lagrangePoint != null && lagrangePoint.active) {
                 val radL = Math.toRadians(lagrangePoint.angleDegrees.toDouble())
                 val rL = maxR * lagrangePoint.distanceRatio.coerceIn(0.24f, 0.92f)
@@ -2264,16 +2475,12 @@ fun VinylCityMapCanvas(
                 val ly = center.y + (rL * sin(radL)).toFloat()
                 val lPos = Offset(lx, ly)
 
-                drawCircle(
-                    color = EchoTokens.Gold.copy(alpha = 0.25f * neonPulse),
-                    radius = 24.dp.toPx() * neonPulse,
-                    center = lPos
-                )
+                drawCircle(color = EchoTokens.Gold.copy(alpha = 0.25f * neonPulse), radius = 22.dp.toPx() * neonPulse, center = lPos)
                 drawCircle(color = EchoTokens.Gold, radius = 5.dp.toPx(), center = lPos)
                 drawCircle(color = Color(0xFF07090E), radius = 2.dp.toPx(), center = lPos)
             }
 
-            // F. ВИНИЛОВЫЕ ПЛАСТИНКИ В ЭФИРЕ
+            // 6. Виниловые пластинки в эфире
             allVinyls.forEach { vinyl ->
                 val isPc = vinyl.id == "pc_studio_node" || vinyl.sourceApp.contains("ПК") || vinyl.sourceApp.contains("Windows")
                 val isFocused = selectedVinyl?.id == vinyl.id
@@ -2292,16 +2499,15 @@ fun VinylCityMapCanvas(
                 if (isFocused) {
                     val chordResonance = vinyl.compatibility
                     if (chordResonance >= 80) {
-                        // Звуковая синусоида осциллографа при резонансе >= 80% (Гравитационный фазовый сдвиг)
                         val chordPath = Path().apply {
                             moveTo(center.x, center.y)
                             val segments = 24
                             val dx = (pos.x - center.x) / segments
                             val dy = (pos.y - center.y) / segments
-                            val nx = -dy * 0.18f
-                            val ny = dx * 0.18f
+                            val nx = -dy * 0.16f
+                            val ny = dx * 0.16f
                             for (s in 1..segments) {
-                                val wave = sin(s * 0.9f + laserPhotonProgress * 12f).toFloat() * 10.dp.toPx()
+                                val wave = sin(s * 0.9f + laserPhotonProgress * 12f).toFloat() * 9.dp.toPx()
                                 lineTo(center.x + dx * s + nx * wave, center.y + dy * s + ny * wave)
                             }
                         }
@@ -2320,14 +2526,17 @@ fun VinylCityMapCanvas(
                     }
                 }
 
-                // Свечение ореола
-                drawCircle(
-                    color = vinylBaseColor.copy(alpha = (if (isFocused) 0.45f else if (isPc) 0.35f else 0.15f) * ghostAlpha),
-                    radius = (if (isFocused) 26.dp else if (isPc) 22.dp else 18.dp).toPx() * neonPulse,
-                    center = pos
-                )
+                // Внешний контур выбранного маркера (чтобы он четко доминировал)
+                if (isFocused) {
+                    drawCircle(
+                        color = EchoTokens.SignalCyan.copy(alpha = 0.40f * neonPulse),
+                        radius = 26.dp.toPx() * neonPulse,
+                        center = pos,
+                        style = Stroke(width = 1.5.dp.toPx())
+                    )
+                }
 
-                // Золотая вторая орбита при Needle Sync (Синхронизация иглы)
+                // Золотая вторая орбита при Needle Sync
                 if (isSynced) {
                     drawCircle(
                         color = EchoTokens.Gold.copy(alpha = 0.85f),
@@ -2338,7 +2547,7 @@ fun VinylCityMapCanvas(
                 }
 
                 // Тело пластинки
-                val discRadius = (if (isFocused) 16.dp else if (isPc) 14.dp else 12.dp).toPx()
+                val discRadius = (if (isFocused) 15.dp else if (isPc) 13.dp else 11.dp).toPx()
                 drawCircle(color = Color(0xFF141720).copy(alpha = ghostAlpha), radius = discRadius, center = pos)
                 drawCircle(
                     color = if (isFocused) vinylBaseColor.copy(alpha = ghostAlpha) else Color(0xFF2D3748).copy(alpha = ghostAlpha),
@@ -2349,7 +2558,7 @@ fun VinylCityMapCanvas(
                 drawCircle(color = vinylBaseColor.copy(alpha = ghostAlpha), radius = discRadius * 0.38f, center = pos)
                 drawCircle(color = Color.Black.copy(alpha = ghostAlpha), radius = discRadius * 0.12f, center = pos)
 
-                // Маркер тайника / заведения
+                // Маркер тайника
                 if (vinyl.isCapsule) {
                     drawCircle(
                         color = EchoTokens.VinylAmber.copy(alpha = 0.45f * neonPulse),
@@ -2360,7 +2569,7 @@ fun VinylCityMapCanvas(
                 }
             }
 
-            // G. ШУМ РАССВЕТА
+            // 7. Шум рассвета
             if (isDawnMode) {
                 for (i in 0 until 30) {
                     val rx = ((i * 73 + (neonPulse * 120).toInt()) % size.width.toInt()).toFloat()
@@ -2369,7 +2578,7 @@ fun VinylCityMapCanvas(
                 }
             }
 
-            // H. ЦЕНТР: МАЯК СЛУШАТЕЛЯ
+            // 8. Центр: Маяк слушателя
             drawCircle(color = EchoTokens.SignalCyan.copy(alpha = 0.18f), radius = 28.dp.toPx() * neonPulse, center = center)
             drawCircle(color = Color(0xFF0E1420), radius = 16.dp.toPx(), center = center)
             drawCircle(color = EchoTokens.SignalCyan, radius = 16.dp.toPx(), center = center, style = Stroke(width = 2.dp.toPx()))
@@ -2401,11 +2610,9 @@ fun TonearmOverlay(isSpinning: Boolean) {
         val bend = Offset(size.width * 0.72f, size.height * 0.48f)
         val headshell = Offset(size.width * 0.52f, size.height * 0.65f)
 
-        // Подшипник тонарма
         drawCircle(color = Color(0xFF1E283C), radius = 8.dp.toPx(), center = pivot)
         drawCircle(color = Color(0xFFE2E8F0), radius = 4.dp.toPx(), center = pivot)
 
-        // Трубка тонарма
         val armPath = Path().apply {
             moveTo(pivot.x, pivot.y)
             lineTo(bend.x, bend.y)
@@ -2413,7 +2620,6 @@ fun TonearmOverlay(isSpinning: Boolean) {
         }
         drawPath(path = armPath, color = Color(0xFFCBD5E1), style = Stroke(width = 2.2.dp.toPx(), cap = StrokeCap.Round))
 
-        // Головка звукоснимателя
         drawCircle(color = Color(0xFF0F1420), radius = 4.dp.toPx(), center = headshell)
         drawCircle(color = if (isSpinning) EchoTokens.SignalCyan else Color(0xFF64748B), radius = 2.5.dp.toPx(), center = headshell)
     }
@@ -2428,27 +2634,19 @@ fun openMusicApp(context: Context, artist: String, title: String, sourceApp: Str
         val intent = when {
             sourceApp.contains("VK", ignoreCase = true) -> {
                 val uri = Uri.parse("vk://search?q=${URLEncoder.encode(query, "UTF-8")}")
-                Intent(Intent.ACTION_VIEW, uri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
+                Intent(Intent.ACTION_VIEW, uri).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
             }
             sourceApp.contains("Яндекс", ignoreCase = true) || sourceApp.contains("Yandex", ignoreCase = true) -> {
                 val uri = Uri.parse("yandexmusic://search?text=${URLEncoder.encode(query, "UTF-8")}")
-                Intent(Intent.ACTION_VIEW, uri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
+                Intent(Intent.ACTION_VIEW, uri).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
             }
             sourceApp.contains("Spotify", ignoreCase = true) -> {
                 val uri = Uri.parse("spotify:search:${URLEncoder.encode(query, "UTF-8")}")
-                Intent(Intent.ACTION_VIEW, uri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
+                Intent(Intent.ACTION_VIEW, uri).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
             }
             else -> {
                 val uri = Uri.parse("https://music.yandex.ru/search?text=${URLEncoder.encode(query, "UTF-8")}")
-                Intent(Intent.ACTION_VIEW, uri).apply {
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
+                Intent(Intent.ACTION_VIEW, uri).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
             }
         }
         context.startActivity(intent)
