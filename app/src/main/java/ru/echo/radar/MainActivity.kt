@@ -241,7 +241,6 @@ fun VinylCityMainScreen() {
     var showCoverZoomDialog by remember { mutableStateOf(false) }
     var showChronicleDialog by remember { mutableStateOf(false) }
     var hasSentThankYouToTarget by remember { mutableStateOf<String?>(null) }
-    var sonarFocusTargetId by remember { mutableStateOf<String?>(null) }
 
     // Feedback toast for reactions sent
     var reactionSentFeedback by remember { mutableStateOf<String?>(null) }
@@ -386,7 +385,7 @@ fun VinylCityMainScreen() {
             // =========================================================
             Box(
                 modifier = Modifier
-                    .weight(1.22f)
+                    .weight(1.35f)
                     .fillMaxWidth(),
                 contentAlignment = Alignment.Center
             ) {
@@ -395,7 +394,6 @@ fun VinylCityMainScreen() {
                     selectedVinyl = selectedVinyl,
                     neonPulse = neonPulse,
                     laserPhotonProgress = laserPhotonProgress,
-                    sonarFocusTargetId = sonarFocusTargetId,
                     onVinylSelected = { vinyl ->
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         EchoSoundManager.playNeedleDrop()
@@ -405,7 +403,6 @@ fun VinylCityMainScreen() {
                         EchoAudioPlayer.stop()
                         selectedVinyl = vinyl
                         manualSpinning = true
-                        sonarFocusTargetId = vinyl.id
                     },
                     onCenterUserClicked = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -413,19 +410,6 @@ fun VinylCityMainScreen() {
                         EchoAudioPlayer.stop()
                         selectedVinyl = currentPlayingTrack.toVinylTrack()
                         manualSpinning = true
-                        sonarFocusTargetId = null
-                    },
-                    onFocusClicked = { vinyl ->
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        EchoSoundManager.playSonarPing()
-                        sonarFocusTargetId = vinyl.id
-                        reactionSentFeedback = "⌖ Сонар сфокусирован: ${vinyl.artist}"
-                    },
-                    onDismissClicked = {
-                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        EchoSoundManager.playTick()
-                        selectedVinyl = currentPlayingTrack.toVinylTrack()
-                        sonarFocusTargetId = null
                     }
                 )
 
@@ -1149,11 +1133,8 @@ fun VinylCityMapCanvas(
     selectedVinyl: VinylTrack?,
     neonPulse: Float,
     laserPhotonProgress: Float,
-    sonarFocusTargetId: String? = null,
     onVinylSelected: (VinylTrack) -> Unit,
-    onCenterUserClicked: () -> Unit,
-    onFocusClicked: (VinylTrack) -> Unit = {},
-    onDismissClicked: () -> Unit = {}
+    onCenterUserClicked: () -> Unit
 ) {
     Box(modifier = Modifier.fillMaxSize()) {
         Canvas(
@@ -1336,21 +1317,6 @@ fun VinylCityMapCanvas(
                 // Mini Vinyl Disc
                 val discRadius = (if (isFocused) 16.dp else if (isPc) 14.dp else 12.dp).toPx()
 
-                // Active Sonar Focus Ring Pulse (когда нажат «Фокус» в верхней плашке)
-                if (sonarFocusTargetId == vinyl.id) {
-                    drawCircle(
-                        color = Color(0xFF00F0FF).copy(alpha = 0.65f),
-                        radius = (discRadius * 1.6f) + (6.dp.toPx() * neonPulse),
-                        center = pos,
-                        style = Stroke(width = 1.6.dp.toPx())
-                    )
-                    drawCircle(
-                        color = Color.White.copy(alpha = 0.75f),
-                        radius = (discRadius * 2.2f) + (10.dp.toPx() * neonPulse),
-                        center = pos,
-                        style = Stroke(width = 0.9.dp.toPx())
-                    )
-                }
                 drawCircle(color = Color(0xFF141720), radius = discRadius, center = pos)
                 drawCircle(
                     color = if (isFocused) vinylBaseColor else Color(0xFF2D3748),
@@ -1416,110 +1382,6 @@ fun VinylCityMapCanvas(
             drawCircle(color = userCoreColor, radius = 16.dp.toPx(), center = center, style = Stroke(width = 2.dp.toPx()))
             drawCircle(color = userCoreColor, radius = 6.dp.toPx(), center = center)
         }
-
-        // F. FLOATING CALLOUT BADGE FOR FOCUSED MINI VINYL (Continuous rounded border!)
-        allVinyls.forEach { vinyl ->
-            val isFocused = selectedVinyl?.id == vinyl.id
-            if (isFocused) {
-                MiniVinylCalloutPill(
-                    vinyl = vinyl,
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 8.dp),
-                    onFocusClicked = {
-                        onFocusClicked(vinyl)
-                    },
-                    onDismissClicked = {
-                        onDismissClicked()
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun MiniVinylCalloutPill(
-    vinyl: VinylTrack,
-    modifier: Modifier = Modifier,
-    onFocusClicked: () -> Unit = {},
-    onDismissClicked: () -> Unit = {}
-) {
-    var coverUrl by remember(vinyl.artist, vinyl.title, vinyl.coverUrl) { mutableStateOf(vinyl.coverUrl) }
-    LaunchedEffect(vinyl.artist, vinyl.title, vinyl.coverUrl) {
-        if (coverUrl.isNullOrBlank()) {
-            coverUrl = AlbumArtResolver.getCoverUrl(vinyl.artist, vinyl.title)
-        }
-    }
-    Surface(
-        shape = RoundedCornerShape(18.dp),
-        color = Color(0xFF0F1420).copy(alpha = 0.96f),
-        border = BorderStroke(1.2.dp, Color(vinyl.colorHex).copy(alpha = 0.85f)),
-        shadowElevation = 10.dp,
-        modifier = modifier
-    ) {
-        Row(
-            modifier = Modifier
-                .clickable { onFocusClicked() }
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (!coverUrl.isNullOrBlank()) {
-                AsyncImage(
-                    model = coverUrl,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(7.dp)),
-                    contentScale = ContentScale.Crop
-                )
-            } else {
-                Text(text = "♫", color = Color(vinyl.colorHex), fontSize = 14.sp)
-            }
-            Column(modifier = Modifier.weight(1f, fill = false)) {
-                Text(
-                    text = "${vinyl.artist} — ${vinyl.title}",
-                    color = Color.White,
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${if (vinyl.id == "pc_studio_node" || vinyl.sourceApp.contains("ПК")) "💻 ПК в эфире" else vinyl.sourceApp} • ${vinyl.distanceLabel}",
-                    color = Color(0xFF94A3B8),
-                    fontSize = 9.5.sp
-                )
-            }
-            // Интерактивная кнопка фокусировки сонара
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = Color(vinyl.colorHex).copy(alpha = 0.16f),
-                border = BorderStroke(0.8.dp, Color(vinyl.colorHex).copy(alpha = 0.6f)),
-                modifier = Modifier.clickable { onFocusClicked() }
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(3.dp)
-                ) {
-                    Text(text = "⌖", color = Color(vinyl.colorHex), fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
-                    Text(text = "Фокус", color = Color.White, fontSize = 9.5.sp, fontWeight = FontWeight.Medium)
-                }
-            }
-            // Кнопка сброса фокуса (закрыть плашку)
-            Box(
-                modifier = Modifier
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF1E283C))
-                    .clickable { onDismissClicked() },
-                contentAlignment = Alignment.Center
-            ) {
-                Text(text = "✕", color = Color(0xFF94A3B8), fontSize = 10.sp, fontWeight = FontWeight.Bold)
-            }
-        }
     }
 }
 
@@ -1563,7 +1425,13 @@ fun TurntableDeckView(
             Box(
                 modifier = Modifier
                     .size(136.dp)
-                    .clickable { onOpenCoverZoom() },
+                    .clickable {
+                        if (!mediaInfo.previewAudioUrl.isNullOrBlank()) {
+                            onToggleAudioPreview()
+                        } else {
+                            onOpenCoverZoom()
+                        }
+                    },
                 contentAlignment = Alignment.Center
             ) {
                 // Platter Well Shadow
@@ -1618,7 +1486,8 @@ fun TurntableDeckView(
                         .size(56.dp)
                         .graphicsLayer { rotationZ = rotationAngle() }
                         .clip(CircleShape)
-                        .background(Color(activeTrack.colorHex)),
+                        .background(Color(activeTrack.colorHex))
+                        .clickable { onOpenCoverZoom() },
                     contentAlignment = Alignment.Center
                 ) {
                     val effectiveCover = activeTrack.coverUrl ?: mediaInfo.coverUrl
@@ -1811,52 +1680,62 @@ fun TurntableDeckView(
                 }
             }
 
-            // A1. In-App Online Audio Preview Button (Слушать соседа прямо сейчас!)
-            if (!mediaInfo.previewAudioUrl.isNullOrBlank()) {
+            // A. COMPACT UNIFIED ACTION BAR (Slim, elegant, non-intrusive)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // If 30-sec in-app preview is available: compact pill
+                if (!mediaInfo.previewAudioUrl.isNullOrBlank()) {
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isAudioPlaying) Color(0xFF00F0FF).copy(alpha = 0.16f) else Color(0xFF141926),
+                        border = BorderStroke(1.dp, if (isAudioPlaying) Color(0xFF00F0FF) else Color(0xFF263346)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(36.dp)
+                            .clickable { onToggleAudioPreview() }
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Text(
+                                text = if (isAudioLoading) "⏳ Загрузка..." else if (isAudioPlaying) "⏸ 30 сек" else "♫ Превью 30с",
+                                color = if (isAudioPlaying) Color(0xFF00F0FF) else Color(0xFFE2E8F0),
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+
+                // Discreet link to external player (VK / Яндекс / Spotify)
                 Surface(
-                    shape = RoundedCornerShape(14.dp),
-                    color = if (isAudioPlaying) Color(0xFF00F0FF).copy(alpha = 0.16f) else Color(0xFF151C2B),
-                    border = BorderStroke(1.dp, if (isAudioPlaying) Color(0xFF00F0FF) else Color(0xFF2B3A52)),
+                    shape = RoundedCornerShape(12.dp),
+                    color = Color(0xFF141926),
+                    border = BorderStroke(1.dp, Color(0xFF263346)),
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(38.dp)
-                        .clickable { onToggleAudioPreview() }
+                        .then(if (!mediaInfo.previewAudioUrl.isNullOrBlank()) Modifier.weight(1f) else Modifier.fillMaxWidth())
+                        .height(36.dp)
+                        .clickable { onOpenInMusicApp() }
                 ) {
                     Row(
-                        modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                        modifier = Modifier.fillMaxSize().padding(horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = if (isAudioLoading) "⏳ Загрузка потока..." else if (isAudioPlaying) "⏸ Играет фрагмент трека (30 сек)" else "♫ Послушать то, что звучит рядом (30 сек)",
-                            color = if (isAudioPlaying) Color(0xFF00F0FF) else Color(0xFFCBD5E1),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold
+                            text = "↗ ${activeTrack.sourceApp}",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
-                }
-            }
-
-            // A2. Primary 1-Click Music Launch Bar
-            Button(
-                onClick = onOpenInMusicApp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(45.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00F0FF)),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text(text = "▶", color = Color.Black, fontSize = 14.sp)
-                    Text(
-                        text = "Слушать в плеере (${activeTrack.sourceApp})",
-                        color = Color.Black,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Bold
-                    )
                 }
             }
 
