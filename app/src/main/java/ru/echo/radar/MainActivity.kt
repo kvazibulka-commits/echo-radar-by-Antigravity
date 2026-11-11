@@ -98,11 +98,6 @@ sealed interface EchoSheetState {
 // =============================================================
 // DATA MODELS & MAPPERS
 // =============================================================
-data class TrackMediaInfo(
-    val coverUrl: String? = null,
-    val previewAudioUrl: String? = null
-)
-
 data class VinylTrack(
     val id: String,
     val title: String,
@@ -470,19 +465,7 @@ fun EchoAppRoot() {
                                 onSaveToChronicle = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     EchoSoundManager.playUnlockChime()
-                                    EchoChronicleManager.saveTrack(
-                                        ChronicleTrackRecord(
-                                            id = activeTrack.id,
-                                            artist = activeTrack.artist,
-                                            title = activeTrack.title,
-                                            coverUrl = activeTrack.coverUrl ?: trackMediaInfo.coverUrl,
-                                            distanceLabel = activeTrack.distanceLabel,
-                                            poeticPersona = activeTrack.poeticPersona,
-                                            resonancePercent = activeTrack.compatibility,
-                                            timestampMillis = System.currentTimeMillis(),
-                                            sourceApp = activeTrack.sourceApp
-                                        )
-                                    )
+                                    EchoChronicleManager.saveTrack(activeTrack)
                                     feedbackMessage = "📜 Сохранено в ночную летопись"
                                 },
                                 onOpenCuratorStory = {
@@ -2042,9 +2025,8 @@ fun EchoBottomSheetHost(
                                         EchoStateRepository.dropCapsule(
                                             artist = artistInput.trim(),
                                             title = titleInput.trim(),
-                                            moodLabel = "Меланхолия",
-                                            zoneName = "Ночной сектор",
-                                            secretMessage = messageInput.trim().ifBlank { "Музыкальный след ночи." }
+                                            secretMessage = messageInput.trim().ifBlank { "Музыкальный след ночи." },
+                                            zoneName = "Ночной сектор"
                                         )
                                         onDismiss()
                                     }
@@ -2072,7 +2054,7 @@ fun EchoBottomSheetHost(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    EchoStateRepository.updateServerHost(hostInput.trim())
+                                    EchoStateRepository.setServerHost(hostInput.trim())
                                     onDismiss()
                                 }
                         ) {
