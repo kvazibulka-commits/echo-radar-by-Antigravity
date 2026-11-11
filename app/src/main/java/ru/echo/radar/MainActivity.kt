@@ -1331,9 +1331,10 @@ fun VinylCityMapCanvas(
                                 }
                             }
 
-                            if (longClickedVinyl != null) {
+                            val targetVinyl = longClickedVinyl
+                            if (targetVinyl != null) {
                                 // Долгое нажатие на винил -> Синхронизация иглы (Drop-in)
-                                onVinylLongClicked(longClickedVinyl)
+                                onVinylLongClicked(targetVinyl)
                             } else {
                                 // Долгое нажатие на карту -> Передача призрачного тепла (Thermal Breath)
                                 val nx = (tapOffset.x / size.width).coerceIn(0f, 1f)
