@@ -321,16 +321,14 @@ object EchoStateRepository {
                     if (id == deviceId) continue
 
                     val distM = s.optInt("distanceMeters", 100)
-                    val distLabel = when {
-                        distM < 50 -> "~$distM м (совсем рядом)"
-                        distM < 120 -> "~$distM м"
-                        else -> "~$distM м (размыто)"
-                    }
+                    val distLabel = "~$distM м"
                     val resDays = s.optInt("resonanceDays", 0)
 
                     val rawCover = s.optString("coverUrl", "")
                     val parsedCover = if (rawCover.isNotBlank()) {
-                        if (rawCover.startsWith("http://") || rawCover.startsWith("https://")) rawCover else buildUrl(rawCover)
+                        val full = if (rawCover.startsWith("http://") || rawCover.startsWith("https://")) rawCover else buildUrl(rawCover)
+                        val trackKey = "${s.optString("artist", "")}_${s.optString("title", "")}".hashCode()
+                        if (full.contains("/api/cover/")) "$full?v=$trackKey" else full
                     } else null
 
                     signals.add(
