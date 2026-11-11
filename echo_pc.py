@@ -46,17 +46,34 @@ except Exception:
     WINRT_AVAILABLE = False
 
 HTTP_TIMEOUT = 3.0
-# Токен публичного туннеля / локального сервера.
-# Источники по приоритету: --token, ECHO_API_TOKEN, echo_config.json.
-API_TOKEN = os.environ.get("ECHO_API_TOKEN", "").strip()
-try:
-    if not API_TOKEN and os.path.exists("echo_config.json"):
-        with open("echo_config.json", "r", encoding="utf-8") as _cfg_f:
-            _cfg = json.load(_cfg_f)
-            if _cfg.get("echo_token"):
-                API_TOKEN = _cfg["echo_token"].strip()
-except Exception:
-    pass
+
+
+def load_api_token() -> str:
+    """Токен доступа: --token/IP задаётся в main(), здесь — окружение и echo_config.json.
+
+    Токен НЕ захардкожен. Порядок поиска конфига:
+    1. ECHO_API_TOKEN в окружении;
+    2. echo_config.json рядом со скриптом;
+    3. echo_config.json в текущей рабочей папке.
+    """
+    token = os.environ.get("ECHO_API_TOKEN", "").strip()
+    if token:
+        return token
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    for config_path in (os.path.join(script_dir, "echo_config.json"), "echo_config.json"):
+        try:
+            if not os.path.exists(config_path):
+                continue
+            with open(config_path, "r", encoding="utf-8") as cfg_file:
+                cfg = json.load(cfg_file)
+            if cfg.get("echo_token"):
+                return str(cfg["echo_token"]).strip()
+        except Exception:
+            continue
+    return ""
+
+
+API_TOKEN = load_api_token()
 WINRT_INSTALL_HINT = (
     "   Для авторежима: pip install winrt-runtime winrt-Windows.Media.Control winrt-Windows.Foundation"
 )

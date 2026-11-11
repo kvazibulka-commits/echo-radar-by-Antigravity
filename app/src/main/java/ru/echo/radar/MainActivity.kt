@@ -2286,9 +2286,15 @@ fun EchoBottomSheetHost(
                         OutlinedTextField(
                             value = tokenInput,
                             onValueChange = { tokenInput = it },
-                            label = { Text("Токен доступа (из консоли сервера)", color = EchoTokens.TextSecondary) },
+                            label = { Text("Токен доступа", color = EchoTokens.TextSecondary) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = "Токен печатается в консоли сервера (🔑 Echo Token). Для домашней сети можно оставить пустым.",
+                            color = EchoTokens.TextSecondary,
+                            fontSize = 10.5.sp,
+                            lineHeight = 14.sp
                         )
                         Surface(
                             shape = RoundedCornerShape(12.dp),

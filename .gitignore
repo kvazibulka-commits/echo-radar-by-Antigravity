@@ -1,38 +1,41 @@
-# ── Секреты и локальная конфигурация ──
+# ─── Секреты и локальное состояние ───
 echo_config.json
-echo_config.local.json
-.env
-*.env
-
-# ── Локальная база и её WAL-файлы ──
+deploy_token.txt
 echo_memory.db
-echo_memory.db-*
-*.db-wal
-*.db-shm
-
-# ── Сборка и артефакты ──
-app-debug.apk
-echo-radar-debug.apk
-extracted_apk/
-artifact_download.zip
+echo_memory.db-wal
+echo_memory.db-shm
 cloudflared.exe
-*.tmp
-.gradle/
-build/
-app/build/
-local.properties
 
-# ── Python ──
+# ─── Python ───
 __pycache__/
 *.py[cod]
 .venv/
 venv/
+.mypy_cache/
+.pytest_cache/
 
-# ── IDE / OS ──
+# ─── Android / Gradle ───
+.gradle/
+build/
+local.properties
+*.iml
 .idea/
-.vscode/
-.DS_Store
-Thumbs.db
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+extracted_apk/
 
-# ── Локальный деплой-скрипт (может содержать токены) ──
-deploy_build.py
+# ─── Временные артефакты и скриншоты проверки ───
+artifact_download.zip
+shots_baseline/
+shots_after/
+backups_pre_kimi/
+probe_viewport.html
+_inspect_tmp.py
+*.log
+
+# ─── ОС ───
+Thumbs.db
+.DS_Store
