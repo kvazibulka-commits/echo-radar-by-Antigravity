@@ -1,6 +1,7 @@
 package ru.echo.radar
 
 import android.content.Context
+import android.provider.Settings
 import android.util.Log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -155,6 +156,18 @@ object EchoStateRepository {
     private val _incomingReaction = MutableStateFlow<IncomingReaction?>(null)
     val incomingReaction: StateFlow<IncomingReaction?> = _incomingReaction.asStateFlow()
 
+    // ── Доступ к уведомлениям (без него ЭХО не видит Яндекс Музыку) ──
+    private val _notificationAccess = MutableStateFlow(false)
+    val notificationAccess: StateFlow<Boolean> = _notificationAccess.asStateFlow()
+
+    // ── Обратная связь для ручной трансляции / шаринга ──
+    private val _broadcastFeedback = MutableStateFlow<String?>(null)
+    val broadcastFeedback: StateFlow<String?> = _broadcastFeedback.asStateFlow()
+
+    fun clearBroadcastFeedback() {
+        _broadcastFeedback.value = null
+    }
+
     private var lastHandledBannerId: Long = 0L
 
     fun dismissIncomingReaction() {
@@ -185,7 +198,21 @@ object EchoStateRepository {
         val savedToken = prefs.getString("echo_token", "") ?: ""
         _serverHost.value = savedHost
         _echoToken.value = savedToken
+        refreshNotificationAccess(context)
         startPolling()
+    }
+
+    /**
+     * Проверяет, выдан ли ЭХО доступ к уведомлениям.
+     * Без него Android не отдаёт медиа-сессии Яндекс Музыки / VK / Spotify.
+     */
+    fun refreshNotificationAccess(context: Context) {
+        val enabled = try {
+            Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners") ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+        _notificationAccess.value = enabled.split(":").any { it.contains(context.packageName) }
     }
 
     fun setServerHost(host: String, token: String = "") {
@@ -254,6 +281,10 @@ object EchoStateRepository {
         val newArtist = artist.ifBlank { "Неизвестный исполнитель" }
         val newTitle = title.ifBlank { "Без названия" }
 
+        // Поллинг медиа-сессий приходит часто: не сбрасываем образ и не шлём дубли
+        val current = _currentTrack.value
+        if (current.artist == newArtist && current.title == newTitle) return
+
         _currentTrack.value = PlayingTrack(
             artist = newArtist,
             title = newTitle,
@@ -266,6 +297,86 @@ object EchoStateRepository {
             lastSentTrack = Pair(newArtist, newTitle)
             scope.launch { sendSignalToServer(newArtist, newTitle, readableSource) }
         }
+    }
+
+    // ── Ручная трансляция трека (в т.ч. из Яндекс Музыки) ──
+
+    fun broadcastTrack(
+        artist: String,
+        title: String,
+        sourceName: String = "Яндекс Музыка",
+        onResult: ((Boolean) -> Unit)? = null
+    ) {
+        val cleanArtist = artist.trim().ifBlank { "Неизвестный исполнитель" }.take(120)
+        val cleanTitle = title.trim().ifBlank { "Без названия" }.take(160)
+
+        _currentTrack.value = PlayingTrack(
+            artist = cleanArtist,
+            title = cleanTitle,
+            sourceApp = sourceName,
+            poeticPersona = "Генерируется куратором...",
+            mood = "Живое присутствие"
+        )
+        lastSentTrack = Pair(cleanArtist, cleanTitle)
+
+        scope.launch {
+            val ok = sendSignalToServer(cleanArtist, cleanTitle, sourceName)
+            withContext(Dispatchers.Main) { onResult?.invoke(ok) }
+        }
+    }
+
+    /**
+     * Понимает текст, которым поделились из Яндекс Музыки:
+     * «Artist — Track», ссылку на трек, строку вида «Слушай «Artist — Track» на Яндекс Музыке».
+     */
+    fun broadcastFromSharedText(raw: String, onResult: ((Boolean, String) -> Unit)? = null) {
+        val parsed = parseArtistTitle(raw)
+        if (parsed == null) {
+            _broadcastFeedback.value = "Не удалось разобрать трек. Вставьте «Исполнитель — Название»."
+            onResult?.invoke(false, "parse_failed")
+            return
+        }
+        val (artist, title) = parsed
+        broadcastTrack(artist, title, "Яндекс Музыка") { ok ->
+            _broadcastFeedback.value = if (ok) {
+                "В эфире: $artist — $title"
+            } else {
+                "Не удалось отправить трек — проверьте соединение и токен"
+            }
+            onResult?.invoke(ok, "$artist — $title")
+        }
+    }
+
+    private fun cleanTrackPart(value: String): String {
+        return value
+            .replace(Regex("\\s+"), " ")
+            .replace(Regex("^(слушай|слушайте|трек|песня)[:\\s]+", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s+(на|в)\\s+(яндекс\\s*музыке|yandex\\s*music).*$", RegexOption.IGNORE_CASE), "")
+            .trim()
+            .trim('«', '»', '"', '“', '”', '\'', '`')
+            .trim()
+    }
+
+    private fun parseArtistTitle(raw: String): Pair<String, String>? {
+        if (raw.isBlank()) return null
+        val withoutUrls = raw
+            .replace(Regex("https?://\\S+", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        for (text in listOf(withoutUrls, raw)) {
+            if (text.isBlank()) continue
+            for (separator in listOf(" — ", " – ", " - ", "—", "–")) {
+                val index = text.indexOf(separator)
+                if (index <= 0) continue
+                val artist = cleanTrackPart(text.substring(0, index))
+                val title = cleanTrackPart(text.substring(index + separator.length))
+                if (artist.isNotBlank() && title.isNotBlank()) {
+                    return artist.take(120) to title.take(160)
+                }
+            }
+        }
+        return null
     }
 
     // ── Построение URL с автоопределением http/https ──
@@ -511,9 +622,9 @@ object EchoStateRepository {
         }
     }
 
-    private suspend fun sendSignalToServer(artist: String, title: String, sourceName: String) {
+    private suspend fun sendSignalToServer(artist: String, title: String, sourceName: String): Boolean {
         val url = buildUrl("/api/signal")
-        if (url.isBlank() || !_presenceActive.value) return
+        if (url.isBlank() || !_presenceActive.value) return false
 
         val body = JSONObject().apply {
             put("id", deviceId)
@@ -530,27 +641,41 @@ object EchoStateRepository {
         requestBuilder.addHeader("X-Device-Id", deviceId)
         val request = requestBuilder.build()
 
-        try {
+        return try {
             withContext(Dispatchers.IO) {
                 httpClient.newCall(request).execute()
             }.use { response ->
-                if (response.code == 401) {
-                    _connectionStatus.value = "✗ Неверный токен (401)"
-                    return
-                }
-                if (response.isSuccessful) {
-                    val respBody = response.body?.string() ?: return
-                    val json = JSONObject(respBody)
-                    val myPersona = json.optString("myCuratedPersona", "")
-                    val myMood = json.optString("myRefinedMood", "")
-                    if (myPersona.isNotBlank()) {
-                        val cur = _currentTrack.value
-                        _currentTrack.value = cur.copy(poeticPersona = myPersona, mood = myMood.ifBlank { cur.mood })
+                when {
+                    response.code == 401 -> {
+                        _connectionStatus.value = "✗ Неверный токен (401)"
+                        false
                     }
+                    response.isSuccessful -> {
+                        val respBody = response.body?.string()
+                        if (!respBody.isNullOrBlank()) {
+                            try {
+                                val json = JSONObject(respBody)
+                                val myPersona = json.optString("myCuratedPersona", "")
+                                val myMood = json.optString("myRefinedMood", "")
+                                if (myPersona.isNotBlank()) {
+                                    val cur = _currentTrack.value
+                                    _currentTrack.value = cur.copy(
+                                        poeticPersona = myPersona,
+                                        mood = myMood.ifBlank { cur.mood }
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                Log.w("EchoRepo", "Signal response parse: ${e.message}")
+                            }
+                        }
+                        true
+                    }
+                    else -> false
                 }
             }
         } catch (e: Exception) {
             Log.w("EchoRepo", "Signal send failed: ${e.message}")
+            false
         }
     }
 

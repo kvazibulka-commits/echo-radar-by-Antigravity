@@ -96,6 +96,7 @@ sealed interface EchoSheetState {
     data class CapsuleDetail(val track: VinylTrack) : EchoSheetState
     object DropCapsule : EchoSheetState
     object ServerSettings : EchoSheetState
+    object YandexBroadcast : EchoSheetState
 }
 
 // =============================================================
@@ -201,10 +202,38 @@ class MainActivity : ComponentActivity() {
         EchoBleManager.startScanning(this)
         EchoBleManager.startAdvertising(this, "echo_device_${System.currentTimeMillis() % 10000}", 120, 8, true)
 
+        EchoStateRepository.refreshNotificationAccess(this)
+        handleShareIntent(intent)
+
         setContent {
             EchoRadarTheme {
                 EchoAppRoot()
             }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Пользователь мог только что выдать доступ к уведомлениям в настройках
+        EchoStateRepository.refreshNotificationAccess(this)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleShareIntent(intent)
+    }
+
+    /**
+     * Приём трека из Яндекс Музыки через «Поделиться → ЭХО».
+     * В EXTRA_TEXT обычно лежит «Исполнитель — Трек» и ссылка на music.yandex.ru.
+     */
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent == null || intent.action != Intent.ACTION_SEND) return
+        val shared = intent.getStringExtra(Intent.EXTRA_TEXT)
+            ?: intent.getStringExtra(Intent.EXTRA_SUBJECT)
+        if (!shared.isNullOrBlank()) {
+            EchoStateRepository.broadcastFromSharedText(shared)
         }
     }
 
@@ -245,6 +274,8 @@ fun EchoAppRoot() {
     val capsules by EchoStateRepository.capsules.collectAsState()
     val isPresenceActive by EchoStateRepository.presenceActive.collectAsState()
     val connectionStatusStr by EchoStateRepository.connectionStatus.collectAsState()
+    val hasNotificationAccess by EchoStateRepository.notificationAccess.collectAsState()
+    val broadcastFeedback by EchoStateRepository.broadcastFeedback.collectAsState()
 
     // Сенсорный купол эфира
     val thermalPatches by EchoStateRepository.thermalPatches.collectAsState()
@@ -366,6 +397,15 @@ fun EchoAppRoot() {
         }
     }
 
+    // Обратная связь от шаринга / ручной трансляции из Яндекс Музыки
+    LaunchedEffect(broadcastFeedback) {
+        val message = broadcastFeedback
+        if (message != null) {
+            feedbackMessage = message
+            EchoStateRepository.clearBroadcastFeedback()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -461,6 +501,12 @@ fun EchoAppRoot() {
                                 isAudioPlaying = isAudioPlaying,
                                 isAudioLoading = isAudioLoading,
                                 isNeedleSynced = isNeedleSynced,
+                                hasNotificationAccess = hasNotificationAccess,
+                                onRequestNotificationAccess = { openNotificationAccess(context) },
+                                onOpenYandexBroadcast = {
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    sheetState = EchoSheetState.YandexBroadcast
+                                },
                                 onMainPlayPauseToggle = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     EchoSoundManager.playNeedleDrop()
@@ -594,6 +640,8 @@ fun EchoAppRoot() {
         // Единый BottomSheet Host
         EchoBottomSheetHost(
             sheetState = sheetState,
+            hasNotificationAccess = hasNotificationAccess,
+            onRequestNotificationAccess = { openNotificationAccess(context) },
             onDismiss = { sheetState = EchoSheetState.None },
             onLoadToDeck = { track ->
                 selectedVinyl = track
@@ -887,6 +935,9 @@ fun DeckScreen(
     isAudioPlaying: Boolean,
     isAudioLoading: Boolean,
     isNeedleSynced: Boolean,
+    hasNotificationAccess: Boolean,
+    onRequestNotificationAccess: () -> Unit,
+    onOpenYandexBroadcast: () -> Unit,
     onMainPlayPauseToggle: () -> Unit,
     onOpenCoverZoom: () -> Unit,
     onOpenInMusicApp: () -> Unit,
@@ -898,6 +949,9 @@ fun DeckScreen(
     onSelectSelf: () -> Unit
 ) {
     var isSignalDetailsExpanded by remember { mutableStateOf(false) }
+    val isWaitingForMusic = activeTrack.artist.startsWith("Ожидание") ||
+        activeTrack.title.startsWith("Включите")
+    val hasPreview = !mediaInfo.previewAudioUrl.isNullOrBlank()
 
     Column(
         modifier = Modifier
@@ -1065,21 +1119,23 @@ fun DeckScreen(
                 overflow = TextOverflow.Ellipsis
             )
 
-            // Аккуратный бейдж ЖАНРА
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = EchoTokens.SurfaceElevated,
-                border = BorderStroke(1.dp, EchoTokens.Divider),
-                modifier = Modifier.padding(top = 2.dp)
-            ) {
-                Text(
-                    text = "♫  ${activeTrack.genre.uppercase()}",
-                    color = EchoTokens.SignalCyan,
-                    fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.8.sp,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
-                )
+            // Аккуратный бейдж ЖАНРА (не показываем, пока трек не определён)
+            if (!isWaitingForMusic) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = EchoTokens.SurfaceElevated,
+                    border = BorderStroke(1.dp, EchoTokens.Divider),
+                    modifier = Modifier.padding(top = 2.dp)
+                ) {
+                    Text(
+                        text = "♫  ${activeTrack.genre.uppercase()}",
+                        color = EchoTokens.SignalCyan,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.8.sp,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
+                    )
+                }
             }
 
             if (isNeedleSynced) {
@@ -1100,6 +1156,84 @@ fun DeckScreen(
             }
         }
 
+        // D0. Если ЭХО ещё не слышит плеер — помогаем подключить Яндекс Музыку
+        if (isWaitingForMusic) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = EchoTokens.SurfaceElevated,
+                border = BorderStroke(1.dp, EchoTokens.SignalCyan.copy(alpha = 0.45f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(7.dp)
+                ) {
+                    Text(
+                        text = if (hasNotificationAccess) {
+                            "ЭХО слушает плееры"
+                        } else {
+                            "ЭХО пока не видит Яндекс Музыку"
+                        },
+                        color = EchoTokens.TextPrimary,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = if (hasNotificationAccess) {
+                            "Включите трек в Яндекс Музыке — он появится на деке автоматически. Или транслируйте вручную."
+                        } else {
+                            "Разрешите доступ к уведомлениям, чтобы ЭХО видел трек из Яндекс Музыки, VK и Spotify."
+                        },
+                        color = EchoTokens.TextSecondary,
+                        fontSize = 10.5.sp,
+                        lineHeight = 15.sp
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (!hasNotificationAccess) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = EchoTokens.SignalCyan,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(38.dp)
+                                    .clickable { onRequestNotificationAccess() }
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = "Разрешить доступ",
+                                        color = Color.Black,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = EchoTokens.Surface,
+                            border = BorderStroke(1.dp, EchoTokens.SkyBlue.copy(alpha = 0.5f)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(38.dp)
+                                .clickable { onOpenYandexBroadcast() }
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "Транслировать из Яндекс Музыки",
+                                    color = EchoTokens.SkyBlue,
+                                    fontSize = 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                    lineHeight = 13.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // D. КОМПАКТНАЯ КНОПКА PLAY/PAUSE (высота 44 dp вместо 56 dp!)
         Surface(
             shape = RoundedCornerShape(14.dp),
@@ -1108,7 +1242,13 @@ fun DeckScreen(
             modifier = Modifier
                 .fillMaxWidth(0.85f)
                 .height(44.dp)
-                .clickable { onMainPlayPauseToggle() }
+                .clickable {
+                    if (hasPreview || isAudioPlaying || isAudioLoading) {
+                        onMainPlayPauseToggle()
+                    } else {
+                        onOpenInMusicApp()
+                    }
+                }
         ) {
             Row(
                 modifier = Modifier.fillMaxSize(),
@@ -1116,17 +1256,28 @@ fun DeckScreen(
                 horizontalArrangement = Arrangement.Center
             ) {
                 Text(
-                    text = if (isAudioLoading) "⏳" else if (isAudioPlaying) "⏸" else "▶",
+                    text = when {
+                        isAudioLoading -> "⏳"
+                        isAudioPlaying -> "⏸"
+                        hasPreview -> "▶"
+                        else -> "↗"
+                    },
                     color = EchoTokens.SignalCyan,
                     fontSize = 16.sp
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = if (isAudioLoading) "ЗАГРУЗКА..." else if (isAudioPlaying) "ПАУЗА" else "СЛУШАТЬ ПРЕВЬЮ",
+                    text = when {
+                        isAudioLoading -> "ЗАГРУЗКА..."
+                        isAudioPlaying -> "ПАУЗА"
+                        hasPreview -> "СЛУШАТЬ ПРЕВЬЮ"
+                        else -> "СЛУШАТЬ В ЯНДЕКС МУЗЫКЕ"
+                    },
                     color = EchoTokens.SignalCyan,
-                    fontSize = 12.sp,
+                    fontSize = if (hasPreview || isAudioPlaying || isAudioLoading) 12.sp else 10.5.sp,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp
+                    letterSpacing = 1.sp,
+                    maxLines = 1
                 )
             }
         }
@@ -2084,10 +2235,13 @@ fun NavCachesIcon(color: Color) {
 @Composable
 fun EchoBottomSheetHost(
     sheetState: EchoSheetState,
+    hasNotificationAccess: Boolean,
+    onRequestNotificationAccess: () -> Unit,
     onDismiss: () -> Unit,
     onLoadToDeck: (VinylTrack) -> Unit
 ) {
     if (sheetState is EchoSheetState.None) return
+    val context = LocalContext.current
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -2119,6 +2273,7 @@ fun EchoBottomSheetHost(
                             is EchoSheetState.CapsuleDetail -> "ТАЙНИК ГОРОДА"
                             is EchoSheetState.DropCapsule -> "ОСТАВИТЬ КАПСУЛУ"
                             is EchoSheetState.ServerSettings -> "НАСТРОЙКИ СЕТИ"
+                            is EchoSheetState.YandexBroadcast -> "ТРАНСЛЯЦИЯ ИЗ ЯНДЕКС МУЗЫКИ"
                             else -> ""
                         },
                         color = EchoTokens.SignalCyan,
@@ -2309,6 +2464,102 @@ fun EchoBottomSheetHost(
                             Box(modifier = Modifier.padding(12.dp), contentAlignment = Alignment.Center) {
                                 Text(text = "Сохранить и подключиться", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             }
+                        }
+                    }
+
+                    is EchoSheetState.YandexBroadcast -> {
+                        var input by remember { mutableStateOf("") }
+                        var status by remember { mutableStateOf("") }
+
+                        Text(
+                            text = "Транслировать трек в эфир",
+                            color = EchoTokens.TextPrimary,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        OutlinedTextField(
+                            value = input,
+                            onValueChange = { input = it },
+                            label = { Text("Ссылка или «Исполнитель — Трек»", color = EchoTokens.TextSecondary) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = "В Яндекс Музыке нажмите «Поделиться» → выберите ЭХО: трек уйдёт в эфир сам. Можно вставить ссылку или строку «Исполнитель — Трек».",
+                            color = EchoTokens.TextSecondary,
+                            fontSize = 10.5.sp,
+                            lineHeight = 15.sp
+                        )
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = EchoTokens.SignalCyan,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    if (input.isBlank()) {
+                                        status = "Вставьте ссылку или «Исполнитель — Трек»"
+                                    } else {
+                                        EchoStateRepository.broadcastFromSharedText(input) { ok, message ->
+                                            status = if (ok) "В эфире: $message" else "Не удалось: $message"
+                                        }
+                                    }
+                                }
+                        ) {
+                            Box(modifier = Modifier.padding(12.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "В эфир ✦",
+                                    color = Color.Black,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = EchoTokens.Surface,
+                            border = BorderStroke(1.dp, EchoTokens.Divider),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { openYandexMusic(context) }
+                        ) {
+                            Box(modifier = Modifier.padding(11.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "Открыть Яндекс Музыку ↗",
+                                    color = EchoTokens.SkyBlue,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+
+                        if (!hasNotificationAccess) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = EchoTokens.Surface,
+                                border = BorderStroke(1.dp, EchoTokens.Gold.copy(alpha = 0.5f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { onRequestNotificationAccess() }
+                            ) {
+                                Box(modifier = Modifier.padding(11.dp), contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = "Разрешить доступ к уведомлениям",
+                                        color = EchoTokens.Gold,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+
+                        if (status.isNotBlank()) {
+                            Text(
+                                text = status,
+                                color = if (status.startsWith("В эфире")) Color(0xFF34D399) else EchoTokens.WarningRed,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
 
@@ -2697,7 +2948,10 @@ fun openMusicApp(context: Context, artist: String, title: String, sourceApp: Str
             }
             sourceApp.contains("Яндекс", ignoreCase = true) || sourceApp.contains("Yandex", ignoreCase = true) -> {
                 val uri = Uri.parse("yandexmusic://search?text=${URLEncoder.encode(query, "UTF-8")}")
-                Intent(Intent.ACTION_VIEW, uri).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                Intent(Intent.ACTION_VIEW, uri).apply {
+                    setPackage("ru.yandex.music")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
             }
             sourceApp.contains("Spotify", ignoreCase = true) -> {
                 val uri = Uri.parse("spotify:search:${URLEncoder.encode(query, "UTF-8")}")
@@ -2710,8 +2964,44 @@ fun openMusicApp(context: Context, artist: String, title: String, sourceApp: Str
         }
         context.startActivity(intent)
     } catch (_: Exception) {
-        val webUri = Uri.parse("https://yandex.ru/search/?text=${URLEncoder.encode("$artist $title слушать", "UTF-8")}")
+        val webUri = Uri.parse("https://music.yandex.ru/search?text=${URLEncoder.encode("$artist $title", "UTF-8")}")
         context.startActivity(Intent(Intent.ACTION_VIEW, webUri).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+    }
+}
+
+/** Открывает системный экран «Доступ к уведомлениям», без которого не видно медиа-сессий. */
+fun openNotificationAccess(context: Context) {
+    try {
+        context.startActivity(
+            Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    } catch (_: Exception) {
+        try {
+            context.startActivity(
+                Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (_: Exception) {
+        }
+    }
+}
+
+/** Открывает Яндекс Музыку (приложение, иначе веб-версию). */
+fun openYandexMusic(context: Context) {
+    try {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse("yandexmusic://"))
+                .setPackage("ru.yandex.music")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    } catch (_: Exception) {
+        try {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse("https://music.yandex.ru"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (_: Exception) {
+        }
     }
 }
 

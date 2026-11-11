@@ -162,6 +162,23 @@ B_AB = 0.15·K + 0.10·T + 0.25·W + 0.15·M + 0.35·E
 - **Локальной сборки нет** (нет JDK/Android SDK). Любая Kotlin-правка проверяется
   только через GitHub Actions: `python deploy_build.py`. Держи изменения маленькими.
 
+### Медиа-сессии и Яндекс Музыка
+
+- `EchoMediaListenerService` опрашивает `MediaSessionManager.getActiveSessions()`
+  раз в 2.5 с и одновременно слушает `onNotificationPosted`. Для Яндекс Музыки это
+  обязательно: уведомление не всегда обновляется при смене трека.
+- `Notification.EXTRA_MEDIA_SESSION` — приоритетный источник; текст уведомления —
+  фоллбэк для плееров без MediaStyle.
+- Пакеты-плееры — allowlist `MUSIC_PACKAGES`. Не матчь `yandex` целиком: иначе
+  навигационные уведомления Яндекс Карт попадут в эфир.
+- Доступ к уведомлениям обязателен: проверяй
+  `Settings.Secure.enabled_notification_listeners` и веди пользователя на
+  `ACTION_NOTIFICATION_LISTENER_SETTINGS`; статус показывается на ДЕКЕ.
+- Ручной канал — `ACTION_SEND` text/plain (`launchMode=singleTop`) плюс парсер
+  «Исполнитель — Трек» (`EchoStateRepository.parseArtistTitle`).
+- Поллинг не должен плодить дубли: `updateDetectedMusic` сравнивает текущий трек
+  и выходит, если он не изменился.
+
 ## Запуск и проверка
 
 ```bat
