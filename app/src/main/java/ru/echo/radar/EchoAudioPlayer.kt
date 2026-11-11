@@ -69,6 +69,8 @@ object EchoAudioPlayer {
         }
     }
 
+    fun currentPositionMs(): Int = try { mediaPlayer?.currentPosition ?: 0 } catch (_: Exception) { 0 }
+
     fun pause() {
         try {
             mediaPlayer?.pause()
@@ -85,5 +87,28 @@ object EchoAudioPlayer {
             _isLoading.value = false
             _activeTrackKey.value = null
         } catch (e: Exception) {}
+    }
+}
+
+/**
+ * VinylRotationEngine
+ * Производный непрерывный расчет угла вращения винилового диска (раздел 7 ТЗ).
+ * Не сбрасывается при навигации между экранами (ETHER <-> DECK <-> ECHOES <-> CACHES).
+ * При паузе - сохраняет последнее положение.
+ * При возобновлении - продолжает вращение без рывков (33⅓ RPM = 1.8с / 1800мс на оборот).
+ */
+object VinylRotationEngine {
+    private var lastTimestamp = System.currentTimeMillis()
+    private var currentAngle = 0f
+
+    @Synchronized
+    fun getContinuousAngle(isSpinning: Boolean): Float {
+        val now = System.currentTimeMillis()
+        val delta = (now - lastTimestamp).coerceIn(0L, 200L)
+        lastTimestamp = now
+        if (isSpinning) {
+            currentAngle = (currentAngle + (delta / 1800f) * 360f) % 360f
+        }
+        return currentAngle
     }
 }
