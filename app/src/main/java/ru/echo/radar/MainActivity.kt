@@ -521,7 +521,6 @@ fun VinylCityMainScreen() {
                     onSendThankYou = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         hasSentThankYouToTarget = activeTrack.id
-                        sonarFocusTargetId = activeTrack.id
                         EchoStateRepository.sendReaction(activeTrack.id, "✦", "Спасибо за созвучие!") { ok ->
                             reactionSentFeedback = if (ok) "Волна ушла: «Спасибо за созвучие!» ✨" else "Ошибка отправки"
                         }
