@@ -25,7 +25,14 @@ Echo_vinyl/
 │   └── pwa.html                   # Сонар, карта, эфир, тайники (iPad/телефон)
 ├── tools/
 │   ├── smoke_test.py              # Дымовой тест запущенного сервера
-│   └── cdp_shot.py                # Скриншоты и проверка JS через Chrome DevTools
+│   ├── cdp_shot.py                # Скриншоты и проверка JS через Chrome DevTools
+│   ├── install_skills.py          # Установка скилов в каталог агента
+│   └── publish_release.py         # GitHub Release с APK
+├── skills/                        # Скилы для ИИ-агентов (концепция, дизайн, код, качество)
+│   ├── echo-product-concept/SKILL.md
+│   ├── echo-visual-design/SKILL.md
+│   ├── echo-engineering/SKILL.md
+│   └── echo-quality/SKILL.md
 ├── tests/test_echo_server.py      # Юнит-тесты ядра (stdlib unittest)
 ├── .github/workflows/build-apk.yml
 ├── deploy_build.py                # Публикация в GitHub + сборка APK (токен из env)
@@ -132,6 +139,30 @@ python echo_pc.py --manual   :: ручной ввод «Исполнитель �
 
 Ещё: [звуковой паспорт](docs/screenshots/pwa-passport.png), [плейлист](docs/screenshots/pwa-playlist.png),
 [тайники](docs/screenshots/pwa-caches.png), [настройки](docs/screenshots/pwa-settings.png).
+
+---
+
+## 🎨 Скилы для ИИ-агентов
+
+В `skills/` лежат четыре проектных скила — это «память проекта» для агентов:
+концепция, визуальный язык, архитектура и стандарты качества. Они устанавливаются
+в каталог агента и подхватываются автоматически по триггерам в описании.
+
+```bat
+python tools/install_skills.py          :: установить новые
+python tools/install_skills.py --force  :: обновить существующие
+python tools/install_skills.py --list   :: что установлено
+```
+
+| Скил | Когда загружается | Что внутри |
+|---|---|---|
+| `echo-product-concept` | продукт, тексты, названия, границы фич | философия, словарь, тон, сценарий вечера |
+| `echo-visual-design` | UI, вёрстка, цвет, анимации, скриншоты | токены, типографика, сонар, дека, компоненты, доступность |
+| `echo-engineering` | код сервера/шаблонов/Android, API, деплой | архитектура, контракт, авторизация, БД, сборка |
+| `echo-quality` | ревью, коммит, релиз, стандарты | безопасность, стиль, бюджеты, DoD, анти-паттерны |
+
+Скилы не дублируют код: источник истины — файлы проекта, скил фиксирует инварианты
+и порядок действий. Подробности и правила поддержки — в [skills/README.md](skills/README.md).
 
 ---
 
