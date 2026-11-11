@@ -2274,11 +2274,19 @@ fun EchoBottomSheetHost(
 
                     is EchoSheetState.ServerSettings -> {
                         var hostInput by remember { mutableStateOf(EchoStateRepository.serverHost.value) }
+                        var tokenInput by remember { mutableStateOf(EchoStateRepository.echoToken.value) }
                         Text(text = "Адрес сервера ЭХО", color = EchoTokens.TextPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         OutlinedTextField(
                             value = hostInput,
                             onValueChange = { hostInput = it },
                             label = { Text("IP / Домен сервера", color = EchoTokens.TextSecondary) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = tokenInput,
+                            onValueChange = { tokenInput = it },
+                            label = { Text("Токен доступа (из консоли сервера)", color = EchoTokens.TextSecondary) },
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -2288,7 +2296,7 @@ fun EchoBottomSheetHost(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable {
-                                    EchoStateRepository.setServerHost(hostInput.trim())
+                                    EchoStateRepository.setServerHost(hostInput.trim(), tokenInput.trim())
                                     onDismiss()
                                 }
                         ) {

@@ -46,11 +46,11 @@ except Exception:
     WINRT_AVAILABLE = False
 
 HTTP_TIMEOUT = 3.0
-# Токен публичного туннеля / локального сервера
-DEFAULT_TOKEN = "1c13ee8697755fdc4518013ea2fd6996"
-API_TOKEN = os.environ.get("ECHO_API_TOKEN", "").strip() or DEFAULT_TOKEN
+# Токен публичного туннеля / локального сервера.
+# Источники по приоритету: --token, ECHO_API_TOKEN, echo_config.json.
+API_TOKEN = os.environ.get("ECHO_API_TOKEN", "").strip()
 try:
-    if os.path.exists("echo_config.json"):
+    if not API_TOKEN and os.path.exists("echo_config.json"):
         with open("echo_config.json", "r", encoding="utf-8") as _cfg_f:
             _cfg = json.load(_cfg_f)
             if _cfg.get("echo_token"):

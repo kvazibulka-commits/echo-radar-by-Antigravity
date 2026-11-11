@@ -1,0 +1,38 @@
+# ── Секреты и локальная конфигурация ──
+echo_config.json
+echo_config.local.json
+.env
+*.env
+
+# ── Локальная база и её WAL-файлы ──
+echo_memory.db
+echo_memory.db-*
+*.db-wal
+*.db-shm
+
+# ── Сборка и артефакты ──
+app-debug.apk
+echo-radar-debug.apk
+extracted_apk/
+artifact_download.zip
+cloudflared.exe
+*.tmp
+.gradle/
+build/
+app/build/
+local.properties
+
+# ── Python ──
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# ── IDE / OS ──
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# ── Локальный деплой-скрипт (может содержать токены) ──
+deploy_build.py

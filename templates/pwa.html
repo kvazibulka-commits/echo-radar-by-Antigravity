@@ -162,6 +162,36 @@ let mapLayersGroup = null;
 let lastKnownBannerId = 0;
 let toastTimeout = null;
 
+// Токен доступа: можно передать один раз в ?token=..., затем он хранится локально.
+const ECHO_TOKEN = (() => {
+  try {
+    const url = new URL(window.location.href);
+    const fromUrl = url.searchParams.get('token');
+    if (fromUrl) {
+      localStorage.setItem('echo_token', fromUrl);
+      url.searchParams.delete('token');
+      window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+      return fromUrl;
+    }
+    return localStorage.getItem('echo_token') || '';
+  } catch (e) {
+    return '';
+  }
+})();
+
+function echoFetch(url, options = {}) {
+  const opts = Object.assign({}, options);
+  opts.headers = Object.assign({}, opts.headers || {});
+  if (ECHO_TOKEN) opts.headers['X-Echo-Token'] = ECHO_TOKEN;
+  return fetch(url, opts);
+}
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]));
+}
+
 const canvas = document.getElementById('sonarCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -228,7 +258,11 @@ function switchTab(idx) {
 
 async function fetchState() {
   try {
-    const res = await fetch('/api/state');
+    const res = await echoFetch('/api/state');
+    if (!res.ok) {
+      showToast('Требуется токен доступа. Откройте /app?token=ВАШ_ТОКЕН', '🔑');
+      return;
+    }
     appState = await res.json();
     renderFeed();
 
@@ -263,7 +297,7 @@ function renderMapHalos() {
         fillColor: hex,
         fillOpacity: 0.08
       });
-      fog.bindTooltip(`<b>${z.placeName}</b><br>Вайб: ${z.dominantVibe}`, { className: 'fog-tooltip', sticky: true });
+      fog.bindTooltip(`<b>${escapeHtml(z.placeName)}</b><br>Вайб: ${escapeHtml(z.dominantVibe)}`, { className: 'fog-tooltip', sticky: true });
       mapFogGroup.addLayer(fog);
     });
   }
@@ -320,8 +354,8 @@ function renderMapHalos() {
       fillOpacity: 1
     });
 
-    const venueBadge = isVen ? `<span style="background:#0C4A6E; color:#38BDF8; padding:2px 6px; border-radius:4px; font-size:11px;">🏛️ ${c.venueName || 'Локация'}</span><br>` : '';
-    capCircle.bindPopup(`${venueBadge}<b>⏳ ${c.artist} — ${c.title}</b><br><i>«${c.secretMessage}»</i>`);
+    const venueBadge = isVen ? `<span style="background:#0C4A6E; color:#38BDF8; padding:2px 6px; border-radius:4px; font-size:11px;">🏛️ ${escapeHtml(c.venueName || 'Локация')}</span><br>` : '';
+    capCircle.bindPopup(`${venueBadge}<b>⏳ ${escapeHtml(c.artist)} — ${escapeHtml(c.title)}</b><br><i>«${escapeHtml(c.secretMessage)}»</i>`);
 
     mapLayersGroup.addLayer(capCircle);
     mapLayersGroup.addLayer(capCore);
@@ -330,27 +364,34 @@ function renderMapHalos() {
 
 function renderFeed() {
   document.getElementById('tabAirBtn').innerText = `Эфир (${appState.signals.length})`;
-  document.getElementById('signalsFeed').innerHTML = appState.signals.map(s => `
-    <div class="card-sig" onclick='openPassport(${JSON.stringify(s)})' style="opacity:${s.isGhost ? 0.65 : 1.0}">
+  document.getElementById('signalsFeed').innerHTML = appState.signals.map((s, index) => `
+    <div class="card-sig" data-signal-index="${index}" style="opacity:${s.isGhost ? 0.65 : 1.0}">
       <div>
         <div style="color:#${(s.colorHex & 0xFFFFFF).toString(16).padStart(6, '0')}; font-size:12px; font-weight:bold;">
-          ${s.personaTitle} ${s.isGhost ? '<span style="font-size:10px; color:#94A3B8;">• Призрачный след</span>' : ''}
+          ${escapeHtml(s.personaTitle)} ${s.isGhost ? '<span style="font-size:10px; color:#94A3B8;">• Призрачный след</span>' : ''}
         </div>
-        <div style="font-weight:bold; font-size:14px;">${s.artist} — ${s.title}</div>
-        <div style="color:#94A3B8; font-size:11px;">${s.moodLabel} • ${s.zoneName}</div>
+        <div style="font-weight:bold; font-size:14px;">${escapeHtml(s.artist)} — ${escapeHtml(s.title)}</div>
+        <div style="color:#94A3B8; font-size:11px;">${escapeHtml(s.moodLabel)} • ${escapeHtml(s.zoneName)}</div>
       </div>
       <div style="font-size:20px; color:#38BDF8;">→</div>
     </div>
   `).join('');
 
+  document.querySelectorAll('#signalsFeed [data-signal-index]').forEach(card => {
+    card.addEventListener('click', () => {
+      const signal = appState.signals[Number(card.dataset.signalIndex)];
+      if (signal) openPassport(signal);
+    });
+  });
+
   document.getElementById('capsulesFeed').innerHTML = appState.capsules.map(c => `
     <div class="card-sig" style="border-color:${c.isVenue ? '#38BDF8' : '#F59E0B'}">
       <div>
         <div style="color:${c.isVenue ? '#38BDF8' : '#FBBF24'}; font-size:12px; font-weight:bold;">
-          ${c.isVenue ? '🏛️ ' + (c.venueName || 'Тайник заведения') : '⏳ ' + c.personaTitle} • ${c.zoneName}
+          ${c.isVenue ? '🏛️ ' + escapeHtml(c.venueName || 'Тайник заведения') : '⏳ ' + escapeHtml(c.personaTitle)} • ${escapeHtml(c.zoneName)}
         </div>
-        <div style="font-weight:bold; font-size:14px;">${c.artist} — ${c.title}</div>
-        <div style="color:#E2E8F0; font-size:12px; font-style:italic;">«${c.secretMessage}»</div>
+        <div style="font-weight:bold; font-size:14px;">${escapeHtml(c.artist)} — ${escapeHtml(c.title)}</div>
+        <div style="color:#E2E8F0; font-size:12px; font-style:italic;">«${escapeHtml(c.secretMessage)}»</div>
       </div>
       <a href="https://music.yandex.ru/search?text=${encodeURIComponent(c.artist + ' ' + c.title)}" target="_blank" style="color:${c.isVenue ? '#38BDF8' : '#FBBF24'}; text-decoration:none; font-size:18px;">▶</a>
     </div>
@@ -370,7 +411,7 @@ function openPassport(sig) {
   document.getElementById('modalListenLink').href = `https://music.yandex.ru/search?text=${encodeURIComponent(sig.artist + ' ' + sig.title)}`;
   document.getElementById('passportModal').classList.add('active');
 
-  fetch('/api/bump_encounter', {
+  echoFetch('/api/bump_encounter', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ targetId: sig.id })
@@ -389,7 +430,7 @@ async function sendReaction(symbol) {
   showToast(`Отклик ${symbol} отправлен в эфир`, symbol);
 
   try {
-    await fetch('/api/react', {
+    await echoFetch('/api/react', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ targetId: target.id, senderId: 'pwa_client', symbol: symbol })
@@ -418,7 +459,7 @@ function openZonePicker() {
 async function openDropModal() {
   const msg = prompt("Анонимное послание для того, кто найдет этот трек:");
   if (msg) {
-    await fetch('/api/drop_capsule', {
+    await echoFetch('/api/drop_capsule', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({

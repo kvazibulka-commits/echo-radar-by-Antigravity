@@ -101,11 +101,11 @@ object EchoStateRepository {
         .retryOnConnectionFailure(true)
         .build()
 
-    // ── Адрес сервера и токен доступа ──
-    private val _serverHost = MutableStateFlow("http://192.168.0.214:8080")
+    // ── Адрес сервера и токен доступа (задаются пользователем в настройках) ──
+    private val _serverHost = MutableStateFlow("")
     val serverHost: StateFlow<String> = _serverHost.asStateFlow()
 
-    private val _echoToken = MutableStateFlow("1c13ee8697755fdc4518013ea2fd6996")
+    private val _echoToken = MutableStateFlow("")
     val echoToken: StateFlow<String> = _echoToken.asStateFlow()
 
     private var _appContext: Context? = null
@@ -180,24 +180,28 @@ object EchoStateRepository {
             prefs.edit().putString("device_id", newId).apply()
             newId
         }
-        val savedHost = prefs.getString("server_host", "http://192.168.0.214:8080") ?: "http://192.168.0.214:8080"
-        val savedToken = prefs.getString("echo_token", "1c13ee8697755fdc4518013ea2fd6996") ?: "1c13ee8697755fdc4518013ea2fd6996"
+        val savedHost = prefs.getString("server_host", "") ?: ""
+        val savedToken = prefs.getString("echo_token", "") ?: ""
         _serverHost.value = savedHost
         _echoToken.value = savedToken
         startPolling()
     }
 
-    fun setServerHost(host: String, token: String = "") {
+    fun setServerHost(host: String, token: String? = null) {
         val trimmedHost = host.trim().trimEnd('/')
-        val trimmedToken = token.trim()
+        val trimmedToken = token?.trim()
         _serverHost.value = trimmedHost
-        _echoToken.value = trimmedToken
+        if (trimmedToken != null) {
+            _echoToken.value = trimmedToken
+        }
         _appContext?.let { ctx ->
-            ctx.getSharedPreferences("echo_prefs", Context.MODE_PRIVATE)
+            val editor = ctx.getSharedPreferences("echo_prefs", Context.MODE_PRIVATE)
                 .edit()
                 .putString("server_host", trimmedHost)
-                .putString("echo_token", trimmedToken)
-                .apply()
+            if (trimmedToken != null) {
+                editor.putString("echo_token", trimmedToken)
+            }
+            editor.apply()
         }
         consecutiveErrors = 0
         if (trimmedHost.isNotBlank()) {

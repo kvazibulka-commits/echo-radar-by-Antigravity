@@ -16,6 +16,8 @@
 import base64
 import concurrent.futures
 import hashlib
+import hmac
+import ipaddress
 import json
 import logging
 import math
@@ -25,6 +27,7 @@ import re
 import secrets
 import socket
 import sqlite3
+import sys
 import threading
 import time
 import urllib.parse
@@ -403,14 +406,37 @@ ORGANIC_PERSONAS = [
 ]
 
 
+LEGACY_ECHO_TOKEN_SHA256 = "59130ceadb33fa255b7313dd386516f64a16fc782ca283b72affd9562535b340"
+
+
+def generate_echo_token():
+    """Генерирует новый случайный токен доступа."""
+    return secrets.token_hex(16)
+
+
+def get_echo_token():
+    """Токен из окружения имеет приоритет над конфигурационным файлом."""
+    return os.environ.get("ECHO_API_TOKEN", "").strip() or str(SERVER_CONFIG.get("echo_token", "")).strip()
+
+
+def token_matches(provided, expected):
+    """Сравнение токенов без утечки длины и без падения на Unicode."""
+    try:
+        return hmac.compare_digest(str(provided).encode("utf-8"), str(expected).encode("utf-8"))
+    except Exception:
+        return False
+
+
 def load_config():
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-            # Если токена нет — генерируем и сохраняем
-            if not cfg.get("echo_token"):
-                cfg["echo_token"] = "1c13ee8697755fdc4518013ea2fd6996"
+            token = str(cfg.get("echo_token", "")).strip()
+            # Если токена нет или остался старый публичный токен — генерируем новый.
+            token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest() if token else ""
+            if not token or hmac.compare_digest(token_hash, LEGACY_ECHO_TOKEN_SHA256):
+                cfg["echo_token"] = generate_echo_token()
                 with open(CONFIG_PATH, "w", encoding="utf-8") as fw:
                     json.dump(cfg, fw, ensure_ascii=False, indent=2)
             return cfg
@@ -419,8 +445,13 @@ def load_config():
 
     cfg = {
         "gemini_api_key": os.environ.get("GEMINI_API_KEY", ""),
-        "echo_token": "1c13ee8697755fdc4518013ea2fd6996"
+        "echo_token": generate_echo_token(),
     }
+    try:
+        with open(CONFIG_PATH, "w", encoding="utf-8") as fw:
+            json.dump(cfg, fw, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.warning("Config save error: %s", e)
     return cfg
 
 
@@ -1184,36 +1215,58 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def _is_direct_loopback(self) -> bool:
+        """Запрос пришёл напрямую с этой же машины, а не через туннель/прокси.
+
+        Cloudflare Tunnel подключается к серверу с 127.0.0.1, поэтому одного
+        адреса недостаточно: наличие прокси-заголовков означает внешний запрос.
+        """
+        for header in ("CF-Connecting-IP", "CF-Ray", "X-Forwarded-For",
+                       "X-Real-IP", "Forwarded"):
+            if self.headers.get(header):
+                return False
+        try:
+            addr = ipaddress.ip_address(self.client_address[0])
+            return addr.is_loopback
+        except ValueError:
+            return False
+
     def _send_html(self, html_text, status=200):
         raw = html_text.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-        token = SERVER_CONFIG.get("echo_token", "")
-        if token:
-            self.send_header("Set-Cookie", f"echo_token={token}; Path=/; SameSite=Lax")
+        token = get_echo_token()
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        supplied = str(query.get("token", [""])[0]).strip()
+        if token and (self._is_direct_loopback() or (supplied and token_matches(supplied, token))):
+            self.send_header("Set-Cookie", f"echo_token={token}; Path=/; HttpOnly; SameSite=Lax")
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
 
     def _check_token(self) -> bool:
-        """Проверяет токен для POST-запросов (авторизация LAN и заголовков)."""
-        # Всегда разрешаем запросы из локальной сети и loopback
-        client_ip = getattr(self, "client_address", [""])[0]
-        if client_ip in ("127.0.0.1", "::1", "localhost") or            client_ip.startswith("192.168.") or client_ip.startswith("10.") or            client_ip.startswith("172."):
-            return True
+        """Проверяет токен для API-запросов.
 
-        expected = SERVER_CONFIG.get("echo_token", "")
+        Без токена разрешены только прямые запросы с этой же машины.
+        Запросы из локальной сети и через туннель обязаны передать токен.
+        """
+        expected = get_echo_token()
         if not expected:
+            return False
+
+        if self._is_direct_loopback():
             return True
 
         provided = self.headers.get("X-Echo-Token", "") or self.headers.get("X-API-Key", "")
-        if provided in (expected, "1c13ee8697755fdc4518013ea2fd6996"):
+        if provided and token_matches(provided, expected):
             return True
 
         cookie_header = self.headers.get("Cookie", "")
-        if f"echo_token={expected}" in cookie_header or "echo_token=1c13ee8697755fdc4518013ea2fd6996" in cookie_header:
-            return True
+        for part in cookie_header.split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == "echo_token" and value and token_matches(value, expected):
+                return True
         return False
 
     def do_OPTIONS(self):
@@ -1242,6 +1295,9 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
                 self.send_response(404)
                 self.end_headers()
         elif path == "/api/state":
+            if not self._check_token():
+                self._send_json({"status": "error", "message": "Unauthorized"}, status=401)
+                return
             query = urllib.parse.parse_qs(parsed.query)
             dev_id = query.get("deviceId", [None])[0] or self.headers.get("X-Device-Id")
             self._send_json(build_state_payload(for_device_id=dev_id))
@@ -1256,10 +1312,8 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
-        # Защищённые эндпоинты требуют токен
-        PROTECTED_PATHS = {"/api/signal", "/api/react", "/api/drop_capsule",
-                           "/api/delete_signal", "/api/save_config", "/api/bump_encounter"}
-        if path in PROTECTED_PATHS and not self._check_token():
+        # Все изменяющие API-эндпоинты требуют токен.
+        if path.startswith("/api/") and not self._check_token():
             self._send_json({"status": "error", "message": "Unauthorized"}, status=401)
             return
 
@@ -1657,7 +1711,7 @@ def main():
     start_udp_broadcast()
     start_windows_media_listener()
     local_ip = get_local_ip()
-    echo_token = SERVER_CONFIG.get("echo_token", "")
+    echo_token = get_echo_token()
     server = EchoServer(("0.0.0.0", HTTP_PORT), EchoRequestHandler)
     logger.info("=" * 66)
     logger.info(" 📡 ЭХО (Echo Radar) — Ночной акустический атлас запущен!")
@@ -1665,7 +1719,9 @@ def main():
     logger.info(" 📱 Сенсорный Сонар и Карта : http://%s:%d/app", local_ip, HTTP_PORT)
     logger.info(" ⚙️  Пульт управления и ИИ  : http://%s:%d/", local_ip, HTTP_PORT)
     if echo_token:
-        logger.info(" 🔑 Echo Token (для Android) : %s", echo_token)
+        logger.info(" 🔑 Echo Token (для Android и удалённого доступа) : %s", echo_token)
+    else:
+        logger.warning(" ⚠️  ECHO_API_TOKEN не задан — удалённый доступ будет закрыт.")
     logger.info("=" * 66)
     try:
         server.serve_forever()
