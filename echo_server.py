@@ -242,44 +242,121 @@ def infer_track_acoustics(artist: str, title: str, mood_label: str = "") -> dict
     art_l = artist.lower()
     tit_l = title.lower()
     mood_l = mood_label.lower()
-    if any(w in art_l or w in mood_l for w in ["молчат дома", "ploho", "пост-панк", "post-punk", "дурной"]):
-        genre = "post-punk"
+
+    # 1. Специфические жанровые эвристики и артисты
+    if any(w in art_l for w in ["therion", "nightwish", "epica", "within temptation", "haggard", "delain"]):
+        genre = "Symphonic Metal"
+        bpm = 135
+        camelot_key = "9A"
+        valence = 0.35
+        energy = 0.92
+    elif any(w in art_l or w in tit_l or w in mood_l for w in [
+        "metallica", "iron maiden", "judas priest", "rammstein", "slipknot", "slayer",
+        "megadeth", "pantera", "dimmu borgir", "cradle of filth", "blind guardian",
+        "sabaton", "amorphis", "in flames", "arch enemy", "behemoth", "gojira",
+        "sepultura", "avenged sevenfold", "ghost", "opeth", "mastodon", "meshuggah",
+        "deftones", "korn", "disturbed", "system of a down", "soad", "ария", "эпидемия",
+        "мастер", "чёрный обелиск", "кипелов", "северный флот", "powerwolf", "alestorm",
+        "metal", "метал"
+    ]):
+        genre = "Metal"
+        bpm = 138
+        camelot_key = "9A"
+        valence = 0.30
+        energy = 0.90
+    elif any(w in art_l or w in mood_l for w in ["молчат дома", "ploho", "пост-панк", "post-punk", "дурной", "буерак", "перемотка", "кино"]):
+        genre = "Post-Punk"
         bpm = 140
         camelot_key = "9A"
         valence = 0.28
         energy = 0.74
-    elif any(w in art_l or w in mood_l for w in ["sirotkin", "сироткин", "август", "теплый винил", "инди"]):
-        genre = "indie"
+    elif any(w in art_l or w in mood_l for w in ["sirotkin", "сироткин", "август", "теплый винил", "инди", "сбпч", "дайте танк"]):
+        genre = "Indie"
         bpm = 118
         camelot_key = "8B"
         valence = 0.42
         energy = 0.54
-    elif any(w in art_l or w in mood_l for w in ["pompeya", "дрим", "dream"]):
-        genre = "dream-pop"
+    elif any(w in art_l or w in mood_l for w in ["pompeya", "дрим", "dream", "shoegaze", "шугейз"]):
+        genre = "Dream-Pop"
         bpm = 120
         camelot_key = "8A"
         valence = 0.65
         energy = 0.60
-    elif any(w in art_l or w in mood_l for w in ["burial", "трип-хоп", "trip-hop", "lo-fi", "лоу-фай"]):
-        genre = "trip-hop"
-        bpm = 70
+    elif any(w in art_l or w in mood_l for w in ["burial", "трип-хоп", "trip-hop", "lo-fi", "лоу-фай", "massive attack", "portishead"]):
+        genre = "Trip-Hop"
+        bpm = 72
         camelot_key = "8A"
         valence = 0.30
         energy = 0.48
-    elif any(w in art_l or w in mood_l for w in ["техно", "techno", "minimal"]):
-        genre = "minimal-techno"
-        bpm = 124
-        camelot_key = "8A"
+    elif any(w in art_l or w in mood_l for w in ["техно", "techno", "minimal", "minimal-techno", "kraftwerk", "deadmau5", "prodigy"]):
+        genre = "Techno"
+        bpm = 126
+        camelot_key = "11A"
         valence = 0.35
-        energy = 0.82
-    elif any(w in art_l or w in mood_l for w in ["синт", "synth"]):
-        genre = "synth-pop"
+        energy = 0.85
+    elif any(w in art_l or w in mood_l for w in ["синт", "synth", "synthwave", "kavinsky", "carpenter brut"]):
+        genre = "Synthwave"
         bpm = 120
         camelot_key = "8A"
         valence = 0.50
-        energy = 0.68
+        energy = 0.72
+    elif any(w in art_l or w in mood_l for w in ["queen", "pink floyd", "nirvana", "linkin park", "muse", "radiohead", "би-2", "сплин", "ддт", "рок", "rock"]):
+        genre = "Rock"
+        bpm = 124
+        camelot_key = "8A"
+        valence = 0.45
+        energy = 0.75
+    elif any(w in art_l or w in mood_l for w in ["zimmer", "einaudi", "bach", "mozart", "beethoven", "симфония", "orchestra"]):
+        genre = "Classical"
+        bpm = 80
+        camelot_key = "6A"
+        valence = 0.50
+        energy = 0.40
+    elif any(w in art_l or w in mood_l for w in ["jazz", "джаз", "miles davis", "coltrane"]):
+        genre = "Jazz"
+        bpm = 95
+        camelot_key = "4A"
+        valence = 0.55
+        energy = 0.45
+    elif any(w in art_l or w in mood_l for w in ["eminem", "oxxxymiron", "рэп", "rap", "hip-hop", "хип-хоп"]):
+        genre = "Hip-Hop"
+        bpm = 92
+        camelot_key = "7A"
+        valence = 0.45
+        energy = 0.70
     else:
-        genre = "indie"
+        # Попытка извлечь официальный жанр из iTunes Search API
+        meta = lookup_metadata(artist, title) if (artist and not artist.startswith("Ожидание")) else {}
+        raw_g = (meta.get("genre") or "").lower().strip()
+        if "metal" in raw_g or "метал" in raw_g:
+            genre = "Symphonic Metal" if any(w in art_l for w in ["therion", "nightwish", "epica", "within temptation"]) else "Metal"
+            bpm = 135
+            camelot_key = "9A"
+            energy = 0.90
+        elif "rock" in raw_g or "рок" in raw_g:
+            genre = "Rock"
+            bpm = 125
+            camelot_key = "8A"
+        elif "classical" in raw_g or "классик" in raw_g or "soundtrack" in raw_g:
+            genre = "Classical"
+            bpm = 80
+            camelot_key = "6A"
+        elif "jazz" in raw_g or "джаз" in raw_g or "blues" in raw_g:
+            genre = "Jazz"
+            bpm = 95
+            camelot_key = "4A"
+        elif "electronic" in raw_g or "dance" in raw_g or "techno" in raw_g:
+            genre = "Electronic"
+            bpm = 126
+            camelot_key = "11A"
+        elif "hip-hop" in raw_g or "rap" in raw_g:
+            genre = "Hip-Hop"
+            bpm = 92
+            camelot_key = "7A"
+        elif raw_g:
+            genre = meta["genre"]
+        else:
+            genre = "Indie"
 
     return {
         "bpm": bpm,

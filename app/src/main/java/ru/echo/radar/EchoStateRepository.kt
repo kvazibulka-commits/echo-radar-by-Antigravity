@@ -20,7 +20,10 @@ data class PlayingTrack(
     val poeticPersona: String,
     val mood: String,
     val isPlaying: Boolean = false,
-    val coverUrl: String? = null
+    val coverUrl: String? = null,
+    val genre: String = "Анализ звука...",
+    val bpm: Int = 120,
+    val camelotKey: String = "8A"
 )
 
 data class NearbyEchoSignal(
@@ -322,13 +325,31 @@ object EchoStateRepository {
         }
 
         val cur = _currentTrack.value
+        val inferredGenre = if (cleanArtist.isNotBlank() && !cleanArtist.startsWith("Ожидание")) {
+            AlbumArtResolver.detectLocalGenre(cleanArtist, cleanTitle)
+        } else "Анализ звука..."
+        val (infBpm, infCam) = when (inferredGenre) {
+            "Symphonic Metal", "Metal" -> Pair(135, "9A")
+            "Post-Punk" -> Pair(140, "9A")
+            "Trip-Hop" -> Pair(75, "8A")
+            "Electronic" -> Pair(126, "11A")
+            "Rock", "Hard Rock" -> Pair(124, "8A")
+            "Classical" -> Pair(80, "6A")
+            "Jazz" -> Pair(95, "4A")
+            "Hip-Hop" -> Pair(92, "7A")
+            else -> Pair(118, "8B")
+        }
+
         _currentTrack.value = cur.copy(
             artist = cleanArtist,
             title = cleanTitle,
             sourceApp = readableSource,
             poeticPersona = if (cur.title != cleanTitle) "Генерируется куратором..." else cur.poeticPersona,
             mood = "Живое присутствие",
-            isPlaying = isPlaying
+            isPlaying = isPlaying,
+            genre = inferredGenre,
+            bpm = infBpm,
+            camelotKey = infCam
         )
 
         if (lastSentTrack != Pair(cleanArtist, cleanTitle) && cleanArtist != "Ожидание музыки...") {

@@ -136,24 +136,31 @@ data class VinylTrack(
     val genre: String = "indie"
 )
 
-fun PlayingTrack.toVinylTrack(): VinylTrack = VinylTrack(
-    id = "self_user_vinyl",
-    title = title,
-    artist = artist,
-    sourceApp = sourceApp,
-    distanceLabel = "Вы • В эфире",
-    poeticPersona = poeticPersona,
-    observation = "Ваша текущая музыкальная аура звучит в городе.",
-    story = "Ваш личный звуковой маяк транслирует эту мелодию в эфир.",
-    compatibility = 100,
-    angleDeg = 0f,
-    ringFactor = 0f,
-    colorHex = 0xFF00F0FFL,
-    isSelf = true,
-    bpm = 120,
-    camelotKey = "8A",
-    genre = "indie"
-)
+fun PlayingTrack.toVinylTrack(): VinylTrack {
+    val effectiveGenre = if (genre.isNotBlank() && genre != "indie" && !genre.startsWith("Анализ")) {
+        genre
+    } else {
+        AlbumArtResolver.detectLocalGenre(artist, title)
+    }
+    return VinylTrack(
+        id = "self_user_vinyl",
+        title = title,
+        artist = artist,
+        sourceApp = sourceApp,
+        distanceLabel = "Вы • В эфире",
+        poeticPersona = poeticPersona,
+        observation = "Ваша текущая музыкальная аура звучит в городе.",
+        story = "Ваш личный звуковой маяк транслирует эту мелодию в эфир.",
+        compatibility = 100,
+        angleDeg = 0f,
+        ringFactor = 0f,
+        colorHex = 0xFF00F0FFL,
+        isSelf = true,
+        bpm = bpm,
+        camelotKey = camelotKey,
+        genre = effectiveGenre
+    )
+}
 
 fun NearbyEchoSignal.toVinylTrack(): VinylTrack = VinylTrack(
     id = id,
@@ -1409,6 +1416,9 @@ fun DeckScreen(
     onSendReaction: (String) -> Unit = {}
 ) {
     var isSignalDetailsExpanded by remember { mutableStateOf(false) }
+    val effectiveGenre = (mediaInfo.genre?.takeIf { it.isNotBlank() }
+        ?: activeTrack.genre.takeIf { it.isNotBlank() && it != "indie" && !it.startsWith("Анализ") }
+        ?: AlbumArtResolver.detectLocalGenre(activeTrack.artist, activeTrack.title))
 
     Column(
         modifier = Modifier
@@ -1582,7 +1592,7 @@ fun DeckScreen(
                 modifier = Modifier.padding(top = 2.dp)
             ) {
                 Text(
-                    text = "♫  ${activeTrack.genre.uppercase()} · ${activeTrack.sourceApp}",
+                    text = "♫  ${effectiveGenre.uppercase()} · ${activeTrack.sourceApp}",
                     color = EchoTokens.SignalCyan.copy(alpha = 0.85f),
                     fontSize = 11.5.sp,
                     fontFamily = FontFamily.Monospace,
@@ -1768,7 +1778,7 @@ fun DeckScreen(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = "• Темп: ${activeTrack.bpm} BPM   • Тональность: Camelot ${activeTrack.camelotKey}\n• Жанр: ${activeTrack.genre}   • Дистанция: ${activeTrack.distanceLabel}\n• Источник: ${activeTrack.sourceApp}",
+                    text = "• Темп: ${activeTrack.bpm} BPM   • Тональность: Camelot ${activeTrack.camelotKey}\n• Жанр: $effectiveGenre   • Дистанция: ${activeTrack.distanceLabel}\n• Источник: ${activeTrack.sourceApp}",
                     color = EchoTokens.TextPrimary,
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
