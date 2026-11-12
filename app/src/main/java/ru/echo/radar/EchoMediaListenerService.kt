@@ -41,6 +41,19 @@ class EchoMediaListenerService : NotificationListenerService() {
     private var mediaSessionManager: MediaSessionManager? = null
     private val handler = Handler(Looper.getMainLooper())
     private var polling = false
+    private var inspecting = false
+    private val registeredControllers = mutableMapOf<String, MediaController>()
+
+    /** Мгновенная реакция на смену трека/паузу — без ожидания опроса. */
+    private val controllerCallback = object : MediaController.Callback() {
+        override fun onMetadataChanged(metadata: MediaMetadata?) {
+            inspectActiveSessions()
+        }
+
+        override fun onPlaybackStateChanged(state: PlaybackState?) {
+            inspectActiveSessions()
+        }
+    }
 
     private val pollRunnable = object : Runnable {
         override fun run() {
@@ -72,6 +85,7 @@ class EchoMediaListenerService : NotificationListenerService() {
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         stopPolling()
+        releaseControllers()
         try {
             mediaSessionManager?.removeOnActiveSessionsChangedListener(sessionsChangedListener)
         } catch (_: Exception) {
@@ -80,6 +94,7 @@ class EchoMediaListenerService : NotificationListenerService() {
 
     override fun onDestroy() {
         stopPolling()
+        releaseControllers()
         super.onDestroy()
     }
 
@@ -125,17 +140,26 @@ class EchoMediaListenerService : NotificationListenerService() {
     }
 
     private fun inspectActiveSessions() {
+        if (inspecting) return
+        inspecting = true
         try {
             val manager = mediaSessionManager ?: return
             val componentName = ComponentName(this, EchoMediaListenerService::class.java)
             inspectControllers(manager.getActiveSessions(componentName))
         } catch (_: SecurityException) {
         } catch (_: Exception) {
+        } finally {
+            inspecting = false
         }
     }
 
     private fun inspectControllers(controllers: List<MediaController>?) {
         if (controllers.isNullOrEmpty()) return
+
+        // Сначала подписываемся на все музыкальные сессии, чтобы не потерять callbacks
+        for (controller in controllers) {
+            if (isMusicPackage(controller.packageName)) registerController(controller)
+        }
 
         var fallback: MediaController? = null
         for (controller in controllers) {
@@ -154,6 +178,26 @@ class EchoMediaListenerService : NotificationListenerService() {
         }
         // Ничего не играет прямо сейчас — показываем последний известный трек
         fallback?.let { inspectController(it, it.packageName, requirePlaying = false) }
+    }
+
+    private fun registerController(controller: MediaController) {
+        val key = controller.sessionToken.toString()
+        if (registeredControllers.containsKey(key)) return
+        try {
+            controller.registerCallback(controllerCallback)
+            registeredControllers[key] = controller
+        } catch (_: Exception) {
+        }
+    }
+
+    private fun releaseControllers() {
+        registeredControllers.values.forEach { controller ->
+            try {
+                controller.unregisterCallback(controllerCallback)
+            } catch (_: Exception) {
+            }
+        }
+        registeredControllers.clear()
     }
 
     private fun inspectController(

@@ -9,6 +9,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -206,7 +207,24 @@ object EchoStateRepository {
         _echoToken.value = savedToken
         refreshNotificationAccess(context)
         refreshLocationAccess(context)
+        startWidgetSync()
         startPolling()
+    }
+
+    /** Домашний виджет «Сейчас играет» повторяет текущий трек без сети и сервисов. */
+    private fun startWidgetSync() {
+        val ctx = _appContext ?: return
+        scope.launch {
+            _currentTrack.collect { track ->
+                EchoWidgetProvider.save(
+                    ctx,
+                    track.title,
+                    track.artist,
+                    track.poeticPersona,
+                    0xFF38BDF8.toInt()
+                )
+            }
+        }
     }
 
     /**

@@ -38,7 +38,7 @@ from collections import OrderedDict, deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-SERVER_VERSION = "3.2.2"
+SERVER_VERSION = "3.3.0"
 SERVER_STARTED_AT = time.time()
 
 logging.basicConfig(

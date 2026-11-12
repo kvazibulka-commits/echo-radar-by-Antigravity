@@ -179,6 +179,17 @@ B_AB = 0.15·K + 0.10·T + 0.25·W + 0.15·M + 0.35·E
 - Поллинг не должен плодить дубли: `updateDetectedMusic` сравнивает текущий трек
   и выходит, если он не изменился.
 
+### Виджет и мгновенные callbacks
+
+- `EchoWidgetProvider` — `RemoteViews` + `SharedPreferences` (`echo_widget_prefs`),
+  без сети и сервисов. Обновляется коллектором `currentTrack` в репозитории.
+- Ресурсы виджета: `res/layout/echo_widget.xml`, `res/xml/echo_widget_info.xml`,
+  `res/drawable/echo_widget_bg.xml`; ресивер — в `AndroidManifest.xml`.
+- `EchoMediaListenerService` регистрирует `MediaController.Callback` на каждую
+  найденную сессию (`onMetadataChanged` / `onPlaybackStateChanged`) — трек приходит
+  почти мгновенно, а опрос 2.5 с остаётся страховкой. Отписываться в
+  `onListenerDisconnected`/`onDestroy`.
+
 ## Запуск и проверка
 
 ```bat

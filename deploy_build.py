@@ -82,6 +82,10 @@ FILES_TO_COMMIT = [
     "app/src/main/java/ru/echo/radar/EchoBleManager.kt",
     "app/src/main/java/ru/echo/radar/AlbumArtResolver.kt",
     "app/src/main/java/ru/echo/radar/EchoMediaListenerService.kt",
+    "app/src/main/java/ru/echo/radar/EchoWidgetProvider.kt",
+    "app/src/main/res/layout/echo_widget.xml",
+    "app/src/main/res/drawable/echo_widget_bg.xml",
+    "app/src/main/res/xml/echo_widget_info.xml",
     ".github/workflows/build-apk.yml",
 ]
 

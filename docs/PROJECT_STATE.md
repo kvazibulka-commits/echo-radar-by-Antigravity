@@ -5,7 +5,7 @@
 > `skills/*/SKILL.md` и `CHANGELOG.md`. Здесь зафиксировано то, что нельзя
 > восстановить из кода: решения, договорённости, текущие версии и открытые задачи.
 
-**Обновлено:** 2026-11-12 · **Версия:** 3.2.2 (Android 0.2.2-alpha)
+**Обновлено:** 2026-11-12 · **Версия:** 3.3.0 (Android 0.3.0-alpha)
 
 ## Что это
 
@@ -20,10 +20,10 @@ SQLite, два веб-клиента (пульт и PWA-сонар), Android-к�
 
 | Компонент | Версия | Где |
 |---|---|---|
-| Сервер | 3.2.2 | `echo_server.py`, `SERVER_VERSION` |
-| Android | 0.2.2-alpha (versionCode 4) | `app/build.gradle.kts` |
+| Сервер | 3.3.0 | `echo_server.py`, `SERVER_VERSION` |
+| Android | 0.3.0-alpha (versionCode 5) | `app/build.gradle.kts` |
 | API | без изменений с 3.1.0 | `README.md`, таблица API |
-| Релизы | v3.2.2 (APK) | GitHub Releases |
+| Релизы | v3.3.0 (APK) | GitHub Releases |
 
 ## Как запускать
 
@@ -62,8 +62,9 @@ python tools/publish_release.py --tag vX.Y.Z --body-file notes.md
 - `templates/dashboard.html` — пульт: живой эфир, отклики, плейлист, тайники.
 - `templates/pwa.html` — сонар/карта/эфир/тайники, deep links `#air` и т.д.
 - Android: `EchoStateRepository` (StateFlow + поллинг), `EchoMediaListenerService`
-  (медиа-сессии + уведомления), `MainActivity` (4 экрана, шторки), `EchoAudioPlayer`
-  (превью 30 с), `EchoChronicleManager`, `EchoBleManager`.
+  (медиа-сессии + уведомления + мгновенные callbacks), `MainActivity` (4 экрана,
+  шторки), `EchoAudioPlayer` (превью 30 с), `EchoChronicleManager`, `EchoBleManager`,
+  `EchoWidgetProvider` (виджет «Сейчас играет» через SharedPreferences + RemoteViews).
 - Скилы: `skills/echo-product-concept`, `echo-visual-design`, `echo-engineering`,
   `echo-quality`; установка — `python tools/install_skills.py --force`.
 
@@ -85,21 +86,23 @@ python tools/publish_release.py --tag vX.Y.Z --body-file notes.md
    личные — только адресату; пульт видит всё.
 9. **Превью:** таймаут 12 с; без превью кнопка ведёт в Яндекс Музыку.
 
-## Что сделано в 3.2.x
+## Что сделано в 3.2–3.3
 
 - 3.2.0: перехват Яндекс Музыки, «Поделиться → ЭХО», ручная трансляция.
 - 3.2.1: пустая дека открывает приложение Яндекс Музыки, а не поиск.
 - 3.2.2: геоплашка исчезает после выдачи доступа; «ЗАГРУЗКА...» больше не
   зависает; отклики с ПК доходят до телефона.
+- 3.3.0: домашний виджет «Сейчас играет»; мгновенные `MediaController.Callback`
+  вместо ожидания опроса.
 
 ## Открытые задачи / идеи
 
-- Автостарт трансляции при старте воспроизведения без ожидания опроса.
-- Виджет «сейчас играет» на главный экран Android.
+- Автостарт трансляции при старте воспроизведения без ожидания опроса
+  (сейчас уже почти мгновенно за счёт callbacks — проверить на реальном устройстве).
 - Реальная геолокация вместо зашитых зон Москвы.
 - OAuth Яндекс Музыки (публичного API нет; сейчас только медиа-сессия и share).
 - Экспорт плейлиста в Яндекс Музыку (сейчас — ссылки на поиск).
-- Скриншоты Android-экранов в `docs/screenshots` (нет эмулятора локально).
+- Скриншоты Android-экранов и виджета в `docs/screenshots` (нет эмулятора локально).
 
 ## Известные ограничения
 
