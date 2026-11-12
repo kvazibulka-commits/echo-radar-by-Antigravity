@@ -176,6 +176,7 @@ object EchoStateRepository {
     private var lastSentTrack: Pair<String, String>? = null
     private var lastKeepaliveTime: Long = 0L
     private var consecutiveErrors = 0
+    private val trackArchetypeCache = mutableMapOf<String, Pair<String, String>>()
 
     fun init(context: Context) {
         _appContext = context.applicationContext
@@ -340,7 +341,14 @@ object EchoStateRepository {
             else -> Pair(118, "8B")
         }
 
-        val (genPersona, genObs) = AlbumArtResolver.generatePoeticArchetype(cleanArtist, cleanTitle, inferredGenre)
+        val trackKey = "$cleanArtist::$cleanTitle".lowercase().trim()
+        val (genPersona, genObs) = if (cleanArtist.isNotBlank() && !cleanArtist.startsWith("Ожидание")) {
+            trackArchetypeCache.getOrPut(trackKey) {
+                AlbumArtResolver.generatePoeticArchetype(cleanArtist, cleanTitle, inferredGenre)
+            }
+        } else {
+            Pair("Архивариус ночных шорохов", "Вслушивается в тишину спящего города, ожидая первых звуков музыки.")
+        }
 
         _currentTrack.value = cur.copy(
             artist = cleanArtist,
@@ -515,7 +523,11 @@ object EchoStateRepository {
             val myMood = json.optString("myRefinedMood", "")
             if (myPersona.isNotBlank()) {
                 val cur = _currentTrack.value
-                _currentTrack.value = cur.copy(poeticPersona = myPersona, mood = myMood.ifBlank { cur.mood })
+                val curKey = "${cur.artist}::${cur.title}".lowercase().trim()
+                if (!trackArchetypeCache.containsKey(curKey) && !cur.artist.startsWith("Ожидание")) {
+                    trackArchetypeCache[curKey] = Pair(myPersona, myMood.ifBlank { cur.mood })
+                    _currentTrack.value = cur.copy(poeticPersona = myPersona, mood = myMood.ifBlank { cur.mood })
+                }
             }
 
             // 4. Проверка входящих откликов (баннеров)
@@ -621,11 +633,14 @@ object EchoStateRepository {
         val url = buildUrl("/api/signal")
         if (url.isBlank() || !_presenceActive.value) return
 
+        val cur = _currentTrack.value
         val body = JSONObject().apply {
             put("id", deviceId)
             put("artist", artist)
             put("title", title)
             put("sourceName", sourceName)
+            put("personaTitle", cur.poeticPersona)
+            put("genre", cur.genre)
         }.toString()
 
         val token = _echoToken.value
@@ -649,8 +664,9 @@ object EchoStateRepository {
                     val json = JSONObject(respBody)
                     val myPersona = json.optString("myCuratedPersona", "")
                     val myMood = json.optString("myRefinedMood", "")
-                    if (myPersona.isNotBlank()) {
-                        val cur = _currentTrack.value
+                    val curKey = "${cur.artist}::${cur.title}".lowercase().trim()
+                    if (myPersona.isNotBlank() && !trackArchetypeCache.containsKey(curKey) && !cur.artist.startsWith("Ожидание")) {
+                        trackArchetypeCache[curKey] = Pair(myPersona, myMood.ifBlank { cur.mood })
                         _currentTrack.value = cur.copy(poeticPersona = myPersona, mood = myMood.ifBlank { cur.mood })
                     }
                 }

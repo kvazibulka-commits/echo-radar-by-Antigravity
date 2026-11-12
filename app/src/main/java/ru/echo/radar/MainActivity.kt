@@ -2938,7 +2938,71 @@ fun LegendRow(color: Color, title: String, desc: String) {
 }
 
 // =============================================================
+// ВЫЧИСЛЕНИЕ АНТИ-КОЛЛИЗИОННЫХ ПОЗИЦИЙ ДИСКОВ НА СОНАРЕ
+// =============================================================
+fun calculateVinylMapPositions(
+    allVinyls: List<VinylTrack>,
+    center: Offset,
+    maxR: Float,
+    minDistancePx: Float
+): Map<String, Offset> {
+    if (allVinyls.isEmpty()) return emptyMap()
+
+    val polarList = allVinyls.map { vinyl ->
+        val jitter = (vinyl.id.hashCode() % 25 - 12) * 0.35f
+        val rad = Math.toRadians((vinyl.angleDeg + jitter).toDouble())
+        val r = maxR * vinyl.ringFactor.coerceIn(0.24f, 0.90f)
+        vinyl to Offset(center.x + (r * cos(rad)).toFloat(), center.y + (r * sin(rad)).toFloat())
+    }.toMutableList()
+
+    // 4 прохода релаксации для предотвращения наложения близких маркеров
+    for (pass in 0 until 4) {
+        var shifted = false
+        for (i in polarList.indices) {
+            for (j in (i + 1) until polarList.size) {
+                val (v1, p1) = polarList[i]
+                val (v2, p2) = polarList[j]
+                val dx = p2.x - p1.x
+                val dy = p2.y - p1.y
+                val dist = sqrt(dx * dx + dy * dy)
+                if (dist < minDistancePx && dist > 0.001f) {
+                    val overlap = (minDistancePx - dist) / 2f
+                    val nx = dx / dist
+                    val ny = dy / dist
+
+                    var newP1 = Offset(p1.x - nx * overlap, p1.y - ny * overlap)
+                    var newP2 = Offset(p2.x + nx * overlap, p2.y + ny * overlap)
+
+                    val r1 = sqrt((newP1.x - center.x) * (newP1.x - center.x) + (newP1.y - center.y) * (newP1.y - center.y))
+                    if (r1 > maxR * 0.93f) {
+                        val scale = (maxR * 0.93f) / r1
+                        newP1 = Offset(center.x + (newP1.x - center.x) * scale, center.y + (newP1.y - center.y) * scale)
+                    }
+                    val r2 = sqrt((newP2.x - center.x) * (newP2.x - center.x) + (newP2.y - center.y) * (newP2.y - center.y))
+                    if (r2 > maxR * 0.93f) {
+                        val scale = (maxR * 0.93f) / r2
+                        newP2 = Offset(center.x + (newP2.x - center.x) * scale, center.y + (newP2.y - center.y) * scale)
+                    }
+
+                    polarList[i] = v1 to newP1
+                    polarList[j] = v2 to newP2
+                    shifted = true
+                }
+            }
+        }
+        if (!shifted) break
+    }
+
+    val map = mutableMapOf<String, Offset>()
+    polarList.forEach { (vinyl, pos) ->
+        map[vinyl.id] = pos
+    }
+    return map
+}
+
+// =============================================================
 // ПРОЦЕДУРНЫЙ СОНАР С ПЛАВНЫМИ ВОЛНАМИ (VinylCityMapCanvas)
+// Комбинация Варианта 1 (Чистый сонар без линий) и Варианта 3 (Водные круги созвучия)
 // =============================================================
 @Composable
 fun VinylCityMapCanvas(
@@ -2965,6 +3029,7 @@ fun VinylCityMapCanvas(
                         onTap = { tapOffset ->
                             val center = Offset(size.width / 2f, size.height / 2f)
                             val maxR = minOf(size.width, size.height) * 0.44f
+                            val positions = calculateVinylMapPositions(allVinyls, center, maxR, 28.dp.toPx())
 
                             if (lagrangePoint != null && lagrangePoint.active) {
                                 val radL = Math.toRadians(lagrangePoint.angleDegrees.toDouble())
@@ -2982,22 +3047,17 @@ fun VinylCityMapCanvas(
                                 (tapOffset.x - center.x) * (tapOffset.x - center.x) +
                                 (tapOffset.y - center.y) * (tapOffset.y - center.y)
                             )
-                            if (distCenter < 38.dp.toPx()) {
+                            if (distCenter < 34.dp.toPx()) {
                                 onCenterUserClicked()
                                 return@detectTapGestures
                             }
 
                             var clickedVinyl: VinylTrack? = null
-                            var minDistance = 44.dp.toPx()
+                            var minDistance = 42.dp.toPx()
 
                             allVinyls.forEach { vinyl ->
-                                val jitter = (vinyl.id.hashCode() % 25 - 12) * 0.35f
-                                val rad = Math.toRadians((vinyl.angleDeg + jitter).toDouble())
-                                val r = maxR * vinyl.ringFactor.coerceIn(0.24f, 0.92f)
-                                val vx = center.x + (r * cos(rad)).toFloat()
-                                val vy = center.y + (r * sin(rad)).toFloat()
-
-                                val d = sqrt((tapOffset.x - vx) * (tapOffset.x - vx) + (tapOffset.y - vy) * (tapOffset.y - vy))
+                                val pos = positions[vinyl.id] ?: center
+                                val d = sqrt((tapOffset.x - pos.x) * (tapOffset.x - pos.x) + (tapOffset.y - pos.y) * (tapOffset.y - pos.y))
                                 if (d < minDistance) {
                                     minDistance = d
                                     clickedVinyl = vinyl
@@ -3009,18 +3069,14 @@ fun VinylCityMapCanvas(
                         onLongPress = { tapOffset ->
                             val center = Offset(size.width / 2f, size.height / 2f)
                             val maxR = minOf(size.width, size.height) * 0.44f
+                            val positions = calculateVinylMapPositions(allVinyls, center, maxR, 28.dp.toPx())
 
                             var longClickedVinyl: VinylTrack? = null
-                            var minDistance = 44.dp.toPx()
+                            var minDistance = 42.dp.toPx()
 
                             allVinyls.forEach { vinyl ->
-                                val jitter = (vinyl.id.hashCode() % 25 - 12) * 0.35f
-                                val rad = Math.toRadians((vinyl.angleDeg + jitter).toDouble())
-                                val r = maxR * vinyl.ringFactor.coerceIn(0.24f, 0.92f)
-                                val vx = center.x + (r * cos(rad)).toFloat()
-                                val vy = center.y + (r * sin(rad)).toFloat()
-
-                                val d = sqrt((tapOffset.x - vx) * (tapOffset.x - vx) + (tapOffset.y - vy) * (tapOffset.y - vy))
+                                val pos = positions[vinyl.id] ?: center
+                                val d = sqrt((tapOffset.x - pos.x) * (tapOffset.x - pos.x) + (tapOffset.y - pos.y) * (tapOffset.y - pos.y))
                                 if (d < minDistance) {
                                     minDistance = d
                                     longClickedVinyl = vinyl
@@ -3037,6 +3093,7 @@ fun VinylCityMapCanvas(
         ) {
             val center = Offset(size.width / 2f, size.height / 2f)
             val maxR = minOf(size.width, size.height) * 0.44f
+            val positions = calculateVinylMapPositions(allVinyls, center, maxR, 28.dp.toPx())
 
             // 1. Тонкая ненавязчивая водная нить реки (14dp)
             val riverPath = Path().apply {
@@ -3137,12 +3194,7 @@ fun VinylCityMapCanvas(
             allVinyls.forEach { vinyl ->
                 val isPc = vinyl.id == "pc_studio_node" || vinyl.sourceApp.contains("ПК") || vinyl.sourceApp.contains("Windows")
                 val isFocused = selectedVinyl?.id == vinyl.id
-                val jitter = (vinyl.id.hashCode() % 25 - 12) * 0.35f
-                val rad = Math.toRadians((vinyl.angleDeg + jitter).toDouble())
-                val r = maxR * vinyl.ringFactor.coerceIn(0.24f, 0.92f)
-                val vx = center.x + (r * cos(rad)).toFloat()
-                val vy = center.y + (r * sin(rad)).toFloat()
-                val pos = Offset(vx, vy)
+                val pos = positions[vinyl.id] ?: center
 
                 val isSynced = needleSyncedTargets.contains(vinyl.id)
                 val isHighRes = vinyl.compatibility >= 80
@@ -3156,55 +3208,69 @@ fun VinylCityMapCanvas(
                 }
                 val ghostAlpha = if (vinyl.isGhost) 0.42f else 1.0f
 
-                // МЕХАНИКА РЕЗОНАНСНОГО ЛУЧА (Акустический мост при созвучии жанров или выборе)
-                if (isHighRes || isFocused) {
-                    val beamAlpha = if (isFocused) 0.85f else (0.32f * neonPulse)
-                    val beamColor = if (isHighRes) EchoTokens.Gold else EchoTokens.SignalCyan
+                // Тело пластинки (утонченные компактные радиусы)
+                val discRadius = (when {
+                    isFocused -> 13.dp
+                    isHighRes -> 9.5.dp
+                    isLowRes -> 7.5.dp
+                    else -> 8.5.dp
+                }).toPx()
 
-                    val chordPath = Path().apply {
-                        moveTo(center.x, center.y)
-                        val segments = 72
-                        val dx = (pos.x - center.x) / segments
-                        val dy = (pos.y - center.y) / segments
-                        val nx = -dy * 0.12f
-                        val ny = dx * 0.12f
-                        for (s in 1..segments) {
-                            val wave = sin(s * 0.32f + laserPhotonProgress * 10f).toFloat() * 6.5.dp.toPx()
-                            lineTo(center.x + dx * s + nx * wave, center.y + dy * s + ny * wave)
+                // МЕХАНИКА РЕЗОНАНСНОГО ЛУЧА (Вариант 1: Появляется ТОЛЬКО при тапе/выборе трека!)
+                if (isFocused) {
+                    if (isLowRes) {
+                        // Пунктирный луч акустического контраста / диссонанса (рэп vs метал)
+                        drawLine(
+                            color = Color(0xFF64748B).copy(alpha = 0.55f),
+                            start = center,
+                            end = pos,
+                            strokeWidth = 1.2.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(5f, 6f), 0f)
+                        )
+                    } else {
+                        // Резонансный мост (Золотой при высоком созвучии >=80%, Циановый при обычном)
+                        val beamColor = if (isHighRes) EchoTokens.Gold else EchoTokens.SignalCyan
+                        val chordPath = Path().apply {
+                            moveTo(center.x, center.y)
+                            val segments = 60
+                            val dx = (pos.x - center.x) / segments
+                            val dy = (pos.y - center.y) / segments
+                            val nx = -dy * 0.10f
+                            val ny = dx * 0.10f
+                            for (s in 1..segments) {
+                                val wave = sin(s * 0.35f + laserPhotonProgress * 12f).toFloat() * 5.dp.toPx()
+                                lineTo(center.x + dx * s + nx * wave, center.y + dy * s + ny * wave)
+                            }
                         }
+                        drawPath(
+                            path = chordPath,
+                            color = beamColor.copy(alpha = 0.85f),
+                            style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round)
+                        )
                     }
-                    drawPath(
-                        path = chordPath,
-                        color = beamColor.copy(alpha = beamAlpha),
-                        style = Stroke(width = if (isFocused) 1.8.dp.toPx() else 1.2.dp.toPx(), cap = StrokeCap.Round)
-                    )
-                } else if (isLowRes && isFocused) {
-                    // Пунктирный луч диссонанса при выборе точки с акустическим контрастом (рэп vs метал)
-                    drawLine(
-                        color = Color(0xFF64748B).copy(alpha = 0.50f),
-                        start = center,
-                        end = pos,
-                        strokeWidth = 1.dp.toPx(),
-                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 6f), 0f)
-                    )
                 }
 
-                // Аура резонанса (Точка с хорошим совпадением)
-                if (isHighRes) {
+                // ВОЛНЫ НА ВОДЕ (Вариант 3): Нежные расходящиеся круги для резонансных точек (>= 80%)
+                if (isHighRes && !vinyl.isGhost) {
+                    val phaseOffset = (Math.abs(vinyl.id.hashCode()) % 100) / 100f
+                    val ripplePhase = (laserPhotonProgress * 1.3f + phaseOffset) % 1f
+                    val rippleRadius = discRadius + (18.dp.toPx() * ripplePhase)
+                    val rippleAlpha = (1f - ripplePhase) * 0.22f
                     drawCircle(
-                        color = EchoTokens.Gold.copy(alpha = 0.20f * neonPulse),
-                        radius = 24.dp.toPx() * neonPulse,
-                        center = pos
+                        color = EchoTokens.Gold.copy(alpha = rippleAlpha),
+                        radius = rippleRadius,
+                        center = pos,
+                        style = Stroke(width = 0.9.dp.toPx())
                     )
                 }
 
-                // Выделение выбранного маркера
+                // Выделение выбранного маркера (легкий ореол)
                 if (isFocused) {
                     drawCircle(
-                        color = (if (isHighRes) EchoTokens.Gold else EchoTokens.SignalCyan).copy(alpha = 0.40f * neonPulse),
-                        radius = 26.dp.toPx() * neonPulse,
+                        color = (if (isHighRes) EchoTokens.Gold else EchoTokens.SignalCyan).copy(alpha = 0.35f * neonPulse),
+                        radius = 20.dp.toPx() * neonPulse,
                         center = pos,
-                        style = Stroke(width = 1.5.dp.toPx())
+                        style = Stroke(width = 1.4.dp.toPx())
                     )
                 }
 
@@ -3212,17 +3278,16 @@ fun VinylCityMapCanvas(
                 if (isSynced) {
                     drawCircle(
                         color = EchoTokens.Gold.copy(alpha = 0.85f),
-                        radius = 28.dp.toPx() * neonPulse,
+                        radius = 24.dp.toPx() * neonPulse,
                         center = pos,
-                        style = Stroke(width = 1.5.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f))
+                        style = Stroke(width = 1.4.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 6f), 0f))
                     )
                 }
 
-                // Тело пластинки
-                val discRadius = (if (isFocused) 15.dp else if (isHighRes) 13.dp else if (isLowRes) 9.dp else 11.dp).toPx()
+                // Отрисовка виниловой пластинки
                 drawCircle(color = Color(0xFF141720).copy(alpha = ghostAlpha), radius = discRadius, center = pos)
                 drawCircle(
-                    color = if (isFocused) vinylBaseColor.copy(alpha = ghostAlpha) else (if (isHighRes) EchoTokens.Gold.copy(alpha = 0.75f) else Color(0xFF2D3748).copy(alpha = ghostAlpha)),
+                    color = if (isFocused) vinylBaseColor.copy(alpha = ghostAlpha) else (if (isHighRes) EchoTokens.Gold.copy(alpha = 0.80f) else Color(0xFF2D3748).copy(alpha = ghostAlpha)),
                     radius = discRadius,
                     center = pos,
                     style = Stroke(
@@ -3230,8 +3295,8 @@ fun VinylCityMapCanvas(
                         pathEffect = if (isLowRes) PathEffect.dashPathEffect(floatArrayOf(3f, 3f), 0f) else null
                     )
                 )
-                drawCircle(color = vinylBaseColor.copy(alpha = ghostAlpha), radius = discRadius * 0.38f, center = pos)
-                drawCircle(color = Color.Black.copy(alpha = ghostAlpha), radius = discRadius * 0.12f, center = pos)
+                drawCircle(color = vinylBaseColor.copy(alpha = ghostAlpha), radius = discRadius * 0.40f, center = pos)
+                drawCircle(color = Color.Black.copy(alpha = ghostAlpha), radius = discRadius * 0.14f, center = pos)
 
                 // Маркер тайника
                 if (vinyl.isCapsule) {
@@ -3253,11 +3318,20 @@ fun VinylCityMapCanvas(
                 }
             }
 
-            // 8. Центр: Маяк слушателя
-            drawCircle(color = EchoTokens.SignalCyan.copy(alpha = 0.18f), radius = 28.dp.toPx() * neonPulse, center = center)
-            drawCircle(color = Color(0xFF0E1420), radius = 16.dp.toPx(), center = center)
-            drawCircle(color = EchoTokens.SignalCyan, radius = 16.dp.toPx(), center = center, style = Stroke(width = 2.dp.toPx()))
-            drawCircle(color = EchoTokens.SignalCyan, radius = 6.dp.toPx(), center = center)
+            // 8. Центр: Маяк слушателя с расходящейся водной волной
+            val centerPhase = (laserPhotonProgress * 1.1f) % 1f
+            val centerRippleRadius = 14.dp.toPx() + (26.dp.toPx() * centerPhase)
+            val centerRippleAlpha = (1f - centerPhase) * 0.18f
+            drawCircle(
+                color = EchoTokens.SignalCyan.copy(alpha = centerRippleAlpha),
+                radius = centerRippleRadius,
+                center = center,
+                style = Stroke(width = 0.9.dp.toPx())
+            )
+
+            drawCircle(color = Color(0xFF0E1420), radius = 14.dp.toPx(), center = center)
+            drawCircle(color = EchoTokens.SignalCyan, radius = 14.dp.toPx(), center = center, style = Stroke(width = 1.8.dp.toPx()))
+            drawCircle(color = EchoTokens.SignalCyan, radius = 5.dp.toPx(), center = center)
         }
     }
 }

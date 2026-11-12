@@ -1459,8 +1459,8 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
                     "avatarPetals": 6,
                     "compatibilityPercent": 88
                 }
-            persona_title = str(curated["personaTitle"])
-            persona_obs = str(curated["personaObservation"])
+            persona_title = str(data.get("personaTitle") or curated["personaTitle"])
+            persona_obs = str(data.get("personaObservation") or curated["personaObservation"])
             mood_label = str(curated["moodLabel"])
             color_hex = ensure_opaque_color(int(curated["colorHex"]))
             avatar_petals = int(curated["avatarPetals"])
