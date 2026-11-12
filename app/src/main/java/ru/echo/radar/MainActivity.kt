@@ -290,6 +290,7 @@ fun EchoAppRoot() {
     val hasNotificationAccess by EchoStateRepository.notificationAccess.collectAsState()
     val broadcastFeedback by EchoStateRepository.broadcastFeedback.collectAsState()
     val openDeckRequest by EchoStateRepository.openDeckRequest.collectAsState()
+    val incomingReaction by EchoStateRepository.incomingReaction.collectAsState()
 
     // Сенсорный купол эфира
     val thermalPatches by EchoStateRepository.thermalPatches.collectAsState()
@@ -435,6 +436,15 @@ fun EchoAppRoot() {
             feedbackMessage = message
             EchoStateRepository.clearBroadcastFeedback()
         }
+    }
+
+    // Входящий отклик из эфира: короткий баннер на любом экране + тихий звук
+    LaunchedEffect(incomingReaction?.id) {
+        val reaction = incomingReaction ?: return@LaunchedEffect
+        EchoSoundManager.playTick()
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        delay(5000)
+        EchoStateRepository.dismissIncomingReaction()
     }
 
     Box(
@@ -657,6 +667,75 @@ fun EchoAppRoot() {
             )
         }
 
+        // Входящий отклик из эфира — короткий баннер поверх любого экрана
+        androidx.compose.animation.AnimatedVisibility(
+            visible = incomingReaction != null,
+            enter = fadeIn(animationSpec = tween(180)) +
+                slideInVertically(animationSpec = tween(220)) { -it },
+            exit = fadeOut(animationSpec = tween(140)) +
+                slideOutVertically(animationSpec = tween(180)) { -it },
+            modifier = Modifier.align(Alignment.TopCenter)
+        ) {
+            incomingReaction?.let { reaction ->
+                val senderLabel = when (reaction.senderId) {
+                    "dashboard" -> "Пульт"
+                    "pc_studio_node" -> "ПК-узел"
+                    else -> reaction.senderId.ifBlank { "Слушатель" }
+                }
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = EchoTokens.SurfaceElevated.copy(alpha = 0.98f),
+                    border = BorderStroke(1.2.dp, EchoTokens.Gold.copy(alpha = 0.8f)),
+                    shadowElevation = 12.dp,
+                    modifier = Modifier
+                        .padding(top = 10.dp, start = 16.dp, end = 16.dp)
+                        .fillMaxWidth()
+                        .clickable { EchoStateRepository.dismissIncomingReaction() }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = reaction.symbol.ifBlank { "✦" },
+                            fontSize = 22.sp
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "ОТКЛИК ИЗ ЭФИРА",
+                                color = EchoTokens.Gold,
+                                fontSize = 9.sp,
+                                fontFamily = FontFamily.Monospace,
+                                letterSpacing = 1.sp
+                            )
+                            Text(
+                                text = reaction.message.ifBlank { "Вам отправили импульс" },
+                                color = EchoTokens.TextPrimary,
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "$senderLabel · ${calculateTimeAgo(reaction.timestamp)}",
+                                color = EchoTokens.TextSecondary,
+                                fontSize = 10.sp
+                            )
+                        }
+                        Text(
+                            text = "✕",
+                            color = EchoTokens.TextSecondary,
+                            fontSize = 13.sp,
+                            modifier = Modifier
+                                .clickable { EchoStateRepository.dismissIncomingReaction() }
+                                .padding(4.dp)
+                        )
+                    }
+                }
+            }
+        }
+
         // Всплывающее уведомление (Toast)
         feedbackMessage?.let { msg ->
             Surface(
@@ -666,7 +745,7 @@ fun EchoAppRoot() {
                 shadowElevation = 8.dp,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
-                    .padding(top = 44.dp)
+                    .padding(top = if (incomingReaction != null) 118.dp else 44.dp)
             ) {
                 Text(
                     text = msg,

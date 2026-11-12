@@ -5,7 +5,7 @@
 > `skills/*/SKILL.md` и `CHANGELOG.md`. Здесь зафиксировано то, что нельзя
 > восстановить из кода: решения, договорённости, текущие версии и открытые задачи.
 
-**Обновлено:** 2026-11-12 · **Версия:** 3.3.1 (Android 0.3.1-alpha)
+**Обновлено:** 2026-11-12 · **Версия:** 3.3.2 (Android 0.3.2-alpha)
 
 ## Что это
 
@@ -20,10 +20,10 @@ SQLite, два веб-клиента (пульт и PWA-сонар), Android-к�
 
 | Компонент | Версия | Где |
 |---|---|---|
-| Сервер | 3.3.1 | `echo_server.py`, `SERVER_VERSION` |
-| Android | 0.3.1-alpha (versionCode 6) | `app/build.gradle.kts` |
+| Сервер | 3.3.2 | `echo_server.py`, `SERVER_VERSION` |
+| Android | 0.3.2-alpha (versionCode 7) | `app/build.gradle.kts` |
 | API | без изменений с 3.1.0 | `README.md`, таблица API |
-| Релизы | v3.3.1 (APK) | GitHub Releases |
+| Релизы | v3.3.2 (APK) | GitHub Releases |
 
 ## Как запускать
 
@@ -95,6 +95,8 @@ python tools/publish_release.py --tag vX.Y.Z --body-file notes.md
 - 3.3.0: домашний виджет «Сейчас играет»; мгновенные `MediaController.Callback`
   вместо ожидания опроса.
 - 3.3.1: тап по виджету открывает ДЕКУ (через `EXTRA_OPEN_DECK`).
+- 3.3.2: входящие отклики всплывают баннером на любом экране (раньше StateFlow
+  `incomingReaction` никто не читал — отклики были видны только в «Волнах»).
 
 ## Открытые задачи / идеи
 
