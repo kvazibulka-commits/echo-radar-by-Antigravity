@@ -1828,10 +1828,6 @@ fun DeckScreen(
                     fontFamily = FontFamily.Monospace,
                     lineHeight = 17.sp
                 )
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    lineHeight = 16.sp
-                )
                 if (activeTrack.observation.isNotBlank()) {
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
