@@ -195,6 +195,10 @@ fun EchoCapsule.toVinylTrack(): VinylTrack = VinylTrack(
 // MAIN ACTIVITY
 // =============================================================
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_OPEN_DECK = "extra_open_deck"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         EchoStateRepository.init(this)
@@ -359,7 +363,7 @@ fun EchoAppRoot() {
     var hasLocationPermission by remember { mutableStateOf(checkLocPermission()) }
     var hasNotificationPermission by remember { mutableStateOf(checkNotifPermission()) }
 
-    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    val lifecycleOwner = androidx.compose.ui.platform.LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
