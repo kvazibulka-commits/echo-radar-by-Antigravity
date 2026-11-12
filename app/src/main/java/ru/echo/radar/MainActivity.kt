@@ -1,15 +1,17 @@
 package ru.echo.radar
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
@@ -214,8 +216,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Пользователь мог только что выдать доступ к уведомлениям в настройках
+        // Пользователь мог только что выдать доступ к уведомлениям или геолокации
         EchoStateRepository.refreshNotificationAccess(this)
+        EchoStateRepository.refreshLocationAccess(this)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -373,10 +376,19 @@ fun EchoAppRoot() {
         }
     }
 
-    // Проверка системных разрешений
-    val hasLocationPermission = remember(context) {
-        context.checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-        context.checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    // Разрешения: состояние живёт в репозитории и обновляется при возврате в приложение
+    val hasLocationPermission by EchoStateRepository.locationAccess.collectAsState()
+
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        EchoStateRepository.refreshLocationAccess(context)
+        if (!granted) {
+            // Отказано навсегда или диалог не показался — ведём в настройки приложения
+            openAppPermissionSettings(context)
+        }
     }
 
     // Обработка кнопки Back
@@ -481,13 +493,12 @@ fun EchoAppRoot() {
                                     sheetState = EchoSheetState.ServerSettings
                                 },
                                 onRequestPermission = {
-                                    try {
-                                        val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                                            data = Uri.fromParts("package", context.packageName, null)
-                                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        }
-                                        context.startActivity(intent)
-                                    } catch (_: Exception) {}
+                                    locationPermissionLauncher.launch(
+                                        arrayOf(
+                                            Manifest.permission.ACCESS_FINE_LOCATION,
+                                            Manifest.permission.ACCESS_COARSE_LOCATION
+                                        )
+                                    )
                                 }
                             )
                         }
@@ -963,6 +974,8 @@ fun DeckScreen(
     val isWaitingForMusic = activeTrack.artist.startsWith("Ожидание") ||
         activeTrack.title.startsWith("Включите")
     val hasPreview = !mediaInfo.previewAudioUrl.isNullOrBlank()
+    // «ЗАГРУЗКА...» показываем только когда превью реально существует
+    val showLoading = isAudioLoading && hasPreview
 
     Column(
         modifier = Modifier
@@ -1254,7 +1267,7 @@ fun DeckScreen(
                 .fillMaxWidth(0.85f)
                 .height(44.dp)
                 .clickable {
-                    if (hasPreview || isAudioPlaying || isAudioLoading) {
+                    if (hasPreview) {
                         onMainPlayPauseToggle()
                     } else {
                         onOpenInMusicApp()
@@ -1268,7 +1281,7 @@ fun DeckScreen(
             ) {
                 Text(
                     text = when {
-                        isAudioLoading -> "⏳"
+                        showLoading -> "⏳"
                         isAudioPlaying -> "⏸"
                         hasPreview -> "▶"
                         else -> "↗"
@@ -1279,13 +1292,13 @@ fun DeckScreen(
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = when {
-                        isAudioLoading -> "ЗАГРУЗКА..."
+                        showLoading -> "ЗАГРУЗКА..."
                         isAudioPlaying -> "ПАУЗА"
                         hasPreview -> "СЛУШАТЬ ПРЕВЬЮ"
                         else -> "СЛУШАТЬ В ЯНДЕКС МУЗЫКЕ"
                     },
                     color = EchoTokens.SignalCyan,
-                    fontSize = if (hasPreview || isAudioPlaying || isAudioLoading) 12.sp else 10.5.sp,
+                    fontSize = if (hasPreview) 12.sp else 10.5.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.sp,
                     maxLines = 1
@@ -2977,6 +2990,19 @@ fun openMusicApp(context: Context, artist: String, title: String, sourceApp: Str
     } catch (_: Exception) {
         val webUri = Uri.parse("https://music.yandex.ru/search?text=${URLEncoder.encode("$artist $title", "UTF-8")}")
         context.startActivity(Intent(Intent.ACTION_VIEW, webUri).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) })
+    }
+}
+
+/** Системные настройки приложения (если разрешение отклонено навсегда). */
+fun openAppPermissionSettings(context: Context) {
+    try {
+        context.startActivity(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", context.packageName, null)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        )
+    } catch (_: Exception) {
     }
 }
 

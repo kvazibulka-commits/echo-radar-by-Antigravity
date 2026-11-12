@@ -6,7 +6,7 @@
 перехватывает треки из плееров через медиа-сессии Android и Windows SMTC, синхронизирует
 их с ИИ-куратором, звуковыми зонами и музыкальными тайниками.
 
-**Версия:** 3.2.1 · Python 3.8+ (проверено на 3.13) · Android 8+ (minSdk 26)
+**Версия:** 3.2.2 · Python 3.8+ (проверено на 3.13) · Android 8+ (minSdk 26)
 
 ---
 
@@ -33,6 +33,7 @@ Echo_vinyl/
 │   ├── echo-visual-design/SKILL.md
 │   ├── echo-engineering/SKILL.md
 │   └── echo-quality/SKILL.md
+├── docs/PROJECT_STATE.md          # Долговременная память: версии, решения, задачи
 ├── tests/test_echo_server.py      # Юнит-тесты ядра (stdlib unittest)
 ├── .github/workflows/build-apk.yml
 ├── deploy_build.py                # Публикация в GitHub + сборка APK (токен из env)
@@ -200,6 +201,9 @@ python tools/install_skills.py --list   :: что установлено
 
 Скилы не дублируют код: источник истины — файлы проекта, скил фиксирует инварианты
 и порядок действий. Подробности и правила поддержки — в [skills/README.md](skills/README.md).
+Долговременное состояние проекта (версии, решения, открытые задачи) — в
+[docs/PROJECT_STATE.md](docs/PROJECT_STATE.md): этот файл читается первым после
+сжатия контекста или в новой сессии.
 
 ---
 

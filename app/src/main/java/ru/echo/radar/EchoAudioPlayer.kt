@@ -2,13 +2,23 @@ package ru.echo.radar
 
 import android.media.AudioAttributes
 import android.media.MediaPlayer
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 object EchoAudioPlayer {
+    private const val TAG = "EchoAudioPlayer"
+
+    // Если prepareAsync не ответил за это время, снимаем «ЗАГРУЗКА...»
+    private const val LOADING_TIMEOUT_MS = 12_000L
+
     private var mediaPlayer: MediaPlayer? = null
+    private val handler = Handler(Looper.getMainLooper())
+    private var loadGeneration = 0
+
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
@@ -29,43 +39,58 @@ object EchoAudioPlayer {
     }
 
     fun play(key: String, url: String) {
-        try {
-            stop()
-            _activeTrackKey.value = key
-            _isLoading.value = true
+        stop()
 
-            mediaPlayer = MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                        .setUsage(AudioAttributes.USAGE_MEDIA)
-                        .build()
-                )
-                setDataSource(url)
-                setOnPreparedListener { mp ->
-                    _isLoading.value = false
+        val generation = ++loadGeneration
+        _activeTrackKey.value = key
+        _isLoading.value = true
+
+        try {
+            val player = MediaPlayer()
+            mediaPlayer = player
+
+            player.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .build()
+            )
+            player.setDataSource(url)
+            player.setOnPreparedListener { mp ->
+                // Плеер мог быть уже освобождён таймаутом или заменён новым треком
+                if (mediaPlayer !== mp) return@setOnPreparedListener
+                _isLoading.value = false
+                try {
                     mp.start()
                     _isPlaying.value = true
+                } catch (e: Exception) {
+                    Log.w(TAG, "Start failed: ${e.message}")
+                    resetState()
                 }
-                setOnCompletionListener {
-                    _isPlaying.value = false
-                    _isLoading.value = false
-                    _activeTrackKey.value = null
-                }
-                setOnErrorListener { _, what, extra ->
-                    Log.w("EchoAudioPlayer", "Playback error: $what, $extra")
-                    _isPlaying.value = false
-                    _isLoading.value = false
-                    _activeTrackKey.value = null
-                    true
-                }
-                prepareAsync()
             }
+            player.setOnCompletionListener { mp ->
+                if (mediaPlayer !== mp) return@setOnCompletionListener
+                _isPlaying.value = false
+                _isLoading.value = false
+                _activeTrackKey.value = null
+            }
+            player.setOnErrorListener { mp, what, extra ->
+                Log.w(TAG, "Playback error: $what, $extra")
+                if (mediaPlayer === mp) resetState()
+                true
+            }
+            player.prepareAsync()
+
+            handler.postDelayed({
+                if (generation == loadGeneration && _isLoading.value) {
+                    Log.w(TAG, "Preview loading timeout, reset")
+                    resetState()
+                    releasePlayer()
+                }
+            }, LOADING_TIMEOUT_MS)
         } catch (e: Exception) {
-            Log.w("EchoAudioPlayer", "Play failed: ${e.message}")
-            _isPlaying.value = false
-            _isLoading.value = false
-            _activeTrackKey.value = null
+            Log.w(TAG, "Play failed: ${e.message}")
+            resetState()
         }
     }
 
@@ -74,19 +99,36 @@ object EchoAudioPlayer {
     fun pause() {
         try {
             mediaPlayer?.pause()
-            _isPlaying.value = false
-        } catch (e: Exception) {}
+        } catch (e: Exception) {
+            Log.w(TAG, "Pause failed: ${e.message}")
+        }
+        _isPlaying.value = false
+        _isLoading.value = false
     }
 
     fun stop() {
+        loadGeneration++
+        releasePlayer()
+        resetState()
+    }
+
+    private fun resetState() {
+        _isPlaying.value = false
+        _isLoading.value = false
+        _activeTrackKey.value = null
+    }
+
+    private fun releasePlayer() {
+        val player = mediaPlayer
+        mediaPlayer = null
         try {
-            mediaPlayer?.stop()
-            mediaPlayer?.release()
-            mediaPlayer = null
-            _isPlaying.value = false
-            _isLoading.value = false
-            _activeTrackKey.value = null
-        } catch (e: Exception) {}
+            player?.reset()
+        } catch (_: Exception) {
+        }
+        try {
+            player?.release()
+        } catch (_: Exception) {
+        }
     }
 }
 

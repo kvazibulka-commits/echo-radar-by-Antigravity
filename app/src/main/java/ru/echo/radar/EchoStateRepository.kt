@@ -1,6 +1,8 @@
 package ru.echo.radar
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.provider.Settings
 import android.util.Log
 import kotlinx.coroutines.*
@@ -160,6 +162,10 @@ object EchoStateRepository {
     private val _notificationAccess = MutableStateFlow(false)
     val notificationAccess: StateFlow<Boolean> = _notificationAccess.asStateFlow()
 
+    // ── Доступ к геолокации (нужен для поиска музыки рядом) ──
+    private val _locationAccess = MutableStateFlow(false)
+    val locationAccess: StateFlow<Boolean> = _locationAccess.asStateFlow()
+
     // ── Обратная связь для ручной трансляции / шаринга ──
     private val _broadcastFeedback = MutableStateFlow<String?>(null)
     val broadcastFeedback: StateFlow<String?> = _broadcastFeedback.asStateFlow()
@@ -199,6 +205,7 @@ object EchoStateRepository {
         _serverHost.value = savedHost
         _echoToken.value = savedToken
         refreshNotificationAccess(context)
+        refreshLocationAccess(context)
         startPolling()
     }
 
@@ -213,6 +220,15 @@ object EchoStateRepository {
             ""
         }
         _notificationAccess.value = enabled.split(":").any { it.contains(context.packageName) }
+    }
+
+    /** Разрешение на геолокацию: пересчитывается при каждом возврате в приложение. */
+    fun refreshLocationAccess(context: Context) {
+        val fine = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        val coarse = context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        _locationAccess.value = fine || coarse
     }
 
     fun setServerHost(host: String, token: String = "") {
@@ -529,12 +545,21 @@ object EchoStateRepository {
             if (bannerObj != null) {
                 val bannerId = bannerObj.optLong("id", 0L)
                 val targetId = bannerObj.optString("targetId", "")
-                if (bannerId != 0L && bannerId > lastHandledBannerId && (targetId == deviceId || targetId.isEmpty())) {
+                val senderId = bannerObj.optString("senderId", "")
+                // Публичные цели (сигнал/тайник/широковещательный импульс с ПК) касаются всех,
+                // личные — только адресата. Раньше телефон отбрасывал sig_*/broadcast.
+                val isPublicTarget = targetId == "broadcast" ||
+                    targetId == "all" ||
+                    targetId == "pc_studio_node" ||
+                    targetId.startsWith("sig_") ||
+                    targetId.startsWith("cap_")
+                val isForThisDevice = targetId == deviceId || targetId.isEmpty() || isPublicTarget
+                if (bannerId != 0L && bannerId > lastHandledBannerId && isForThisDevice && senderId != deviceId) {
                     lastHandledBannerId = bannerId
                     _incomingReaction.value = IncomingReaction(
                         id = bannerId,
                         symbol = bannerObj.optString("symbol", "✦"),
-                        senderId = bannerObj.optString("senderId", "Слушатель"),
+                        senderId = senderId.ifBlank { "Слушатель" },
                         message = bannerObj.optString("message", "Вам отправлен импульс"),
                         timestamp = bannerObj.optLong("time", System.currentTimeMillis())
                     )

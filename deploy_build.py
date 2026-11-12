@@ -59,6 +59,7 @@ FILES_TO_COMMIT = [
     "tools/cdp_shot.py",
     "tools/publish_release.py",
     "tools/install_skills.py",
+    "docs/PROJECT_STATE.md",
     "skills/README.md",
     "skills/echo-product-concept/SKILL.md",
     "skills/echo-visual-design/SKILL.md",
