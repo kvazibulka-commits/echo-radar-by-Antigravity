@@ -195,6 +195,10 @@ fun EchoCapsule.toVinylTrack(): VinylTrack = VinylTrack(
 // MAIN ACTIVITY
 // =============================================================
 class MainActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_OPEN_DECK = "echo_open_deck"
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         EchoStateRepository.init(this)
@@ -206,6 +210,9 @@ class MainActivity : ComponentActivity() {
 
         EchoStateRepository.refreshNotificationAccess(this)
         handleShareIntent(intent)
+        if (intent?.getBooleanExtra(EXTRA_OPEN_DECK, false) == true) {
+            EchoStateRepository.requestOpenDeck()
+        }
 
         setContent {
             EchoRadarTheme {
@@ -225,6 +232,9 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleShareIntent(intent)
+        if (intent.getBooleanExtra(EXTRA_OPEN_DECK, false)) {
+            EchoStateRepository.requestOpenDeck()
+        }
     }
 
     /**
@@ -279,6 +289,7 @@ fun EchoAppRoot() {
     val connectionStatusStr by EchoStateRepository.connectionStatus.collectAsState()
     val hasNotificationAccess by EchoStateRepository.notificationAccess.collectAsState()
     val broadcastFeedback by EchoStateRepository.broadcastFeedback.collectAsState()
+    val openDeckRequest by EchoStateRepository.openDeckRequest.collectAsState()
 
     // Сенсорный купол эфира
     val thermalPatches by EchoStateRepository.thermalPatches.collectAsState()
@@ -295,6 +306,14 @@ fun EchoAppRoot() {
 
     // Единый BottomSheet стейт
     var sheetState by remember { mutableStateOf<EchoSheetState>(EchoSheetState.None) }
+
+    // Тап по виджету «Сейчас играет» открывает ДЕКУ
+    LaunchedEffect(openDeckRequest) {
+        if (openDeckRequest) {
+            currentScreen = EchoScreen.DECK
+            EchoStateRepository.consumeOpenDeckRequest()
+        }
+    }
 
     // Все доступные пластинки в эфире
     val allVinyls = remember(currentPlayingTrack, nearbySignals, capsules) {

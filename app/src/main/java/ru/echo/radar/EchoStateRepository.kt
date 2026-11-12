@@ -171,6 +171,18 @@ object EchoStateRepository {
     private val _broadcastFeedback = MutableStateFlow<String?>(null)
     val broadcastFeedback: StateFlow<String?> = _broadcastFeedback.asStateFlow()
 
+    // ── Запрос открыть ДЕКУ (например, тап по виджету) ──
+    private val _openDeckRequest = MutableStateFlow(false)
+    val openDeckRequest: StateFlow<Boolean> = _openDeckRequest.asStateFlow()
+
+    fun requestOpenDeck() {
+        _openDeckRequest.value = true
+    }
+
+    fun consumeOpenDeckRequest() {
+        _openDeckRequest.value = false
+    }
+
     fun clearBroadcastFeedback() {
         _broadcastFeedback.value = null
     }
