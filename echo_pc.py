@@ -216,8 +216,19 @@ async def read_current_track():
     Возвращает (artist, title, album, app_name) или None, если ничего не играет.
     """
     manager = await GlobalSystemMediaTransportControlsSessionManager.request_async()
+
+    # Сначала — сессия, которую Windows считает текущей (та, что видна в медиа-панели),
+    # затем остальные. Иначе веб-плеер в фоне может «перебить» активный трек.
+    sessions = list(manager.get_sessions())
+    try:
+        current_session = manager.get_current_session()
+    except Exception:
+        current_session = None
+    if current_session is not None:
+        sessions.insert(0, current_session)
+
     fallback = None
-    for session in manager.get_sessions():
+    for session in sessions:
         try:
             props = await session.try_get_media_properties_async()
         except Exception:

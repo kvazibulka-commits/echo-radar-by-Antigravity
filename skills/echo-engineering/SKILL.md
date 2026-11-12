@@ -242,6 +242,7 @@ python tools/publish_release.py --tag v3.2.0          :: релиз с APK
 | Плашка геолокации не исчезает | разрешение кэшировалось в `remember` | `StateFlow` + `refreshLocationAccess` в `onResume` |
 | Вечная «ЗАГРУЗКА...» на деке | `prepareAsync` без таймаута | watchdog 12 с + показывать loading только при `hasPreview` |
 | Отклики с ПК не доходят до телефона | фильтр принимал только `targetId == deviceId` | публичные цели `sig_*`/`cap_*`/`broadcast`/`pc_studio_node` |
+| Трек с ПК не виден в телефоне | фильтр отбрасывал `Artist \| Track (id)` как мусор | `normalize_track_fields` разбирает заголовок, а не выбрасывает |
 
 ## Чек-лист перед коммитом
 

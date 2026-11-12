@@ -44,7 +44,6 @@ def tearDownModule():
 class TestTrackFilters(unittest.TestCase):
     def test_junk_tracks_rejected(self):
         cases = [
-            ("", "Systrum Sistum | SSR (308046B0AF4A39CB)"),
             ("", ""),
             ("", "chrome-extension://abc/offscreen.html"),
             ("Browser", "file:///C:/music.mp3"),
@@ -62,6 +61,8 @@ class TestTrackFilters(unittest.TestCase):
             ("Burial", "Archangel"),
             ("", "Подкаст о ночном городе"),
             ("Chet Baker", "I Fall In Love Too Easily"),
+            # Метаданные веб-плеера: пустой артист и «Artist | Track» — это не мусор
+            ("", "Systrum Sistum | SSR"),
         ]
         for artist, title in cases:
             with self.subTest(artist=artist, title=title):
@@ -80,6 +81,18 @@ class TestTextHelpers(unittest.TestCase):
         self.assertEqual(echo_server.normalize_zone("Сретенка"), "Сретенка · Камерные бары")
         self.assertEqual(echo_server.normalize_zone("Парк Горького · Набережная"), "Парк Горького · Набережная")
         self.assertEqual(echo_server.normalize_zone("Северный лесопарк"), "Северный лесопарк")
+
+    def test_normalize_browser_title(self):
+        cases = [
+            (("", "Systrum Sistum | SSR (308046B0AF4A39CB)"), ("Systrum Sistum", "SSR")),
+            (("", "Systrum Sistum | SSR"), ("Systrum Sistum", "SSR")),
+            (("Kino", "Gruppa Krovi"), ("Kino", "Gruppa Krovi")),
+            (("", "Bioform"), ("", "Bioform")),
+            (("  ", "  "), ("", "")),
+        ]
+        for (artist, title), expected in cases:
+            with self.subTest(artist=artist, title=title):
+                self.assertEqual(echo_server.normalize_track_fields(artist, title), expected)
 
 
 class TestResonanceMath(unittest.TestCase):

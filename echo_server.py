@@ -38,7 +38,7 @@ from collections import OrderedDict, deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-SERVER_VERSION = "3.3.2"
+SERVER_VERSION = "3.3.3"
 SERVER_STARTED_AT = time.time()
 
 logging.basicConfig(
@@ -83,10 +83,11 @@ WRITE_RATE_LIMIT = 90                     # POST-запросов в минут�
 
 # Признаки служебных медиа-сессий браузеров/расширений, которые не должны попадать в эфир
 JUNK_MARKERS = ("://", "offscreen.html", "chrome-extension", "about:blank", "newtab")
-_TAB_TITLE_RE = re.compile(r"\|\s*[^|]{1,40}\([0-9A-Fa-f]{6,}\)\s*$")
+TRAILING_BROWSER_ID_RE = re.compile(r"\s*\((?:[0-9A-Fa-f]{8,}|[0-9a-f]{16,})\)\s*$")
 
 # Странные «треки» с пустым исполнителем и заголовком вкладки браузера (например,
-# "Systrum Sistum | SSR (308046B0AF4A39CB)") выглядят как музыка, но музыкой не являются.
+# "Systrum Sistum | SSR (308046B0AF4A39CB)") — это всё-таки музыка, просто метаданные
+# пришли из веб-плеера. Их не выбрасываем, а разбираем в artist/title.
 def is_junk_track(artist: str, title: str) -> bool:
     a = (artist or "").strip()
     t = (title or "").strip()
@@ -94,8 +95,6 @@ def is_junk_track(artist: str, title: str) -> bool:
         return True
     blob = f"{a} {t}".lower()
     if any(marker in blob for marker in JUNK_MARKERS):
-        return True
-    if not a and (" | " in t or _TAB_TITLE_RE.search(t)):
         return True
     if len(t) > 200:
         return True
@@ -107,6 +106,31 @@ def sanitize_text(value, limit: int = MAX_TEXT_LEN, default: str = "") -> str:
     text = str(value if value is not None else default)
     text = re.sub(r"[\x00-\x1f\x7f]+", " ", text).strip()
     return text[:limit]
+
+
+def normalize_track_fields(artist: str, title: str) -> tuple[str, str]:
+    """Приводит метаданные веб-плееров к паре «исполнитель — трек».
+
+    Пример: ('', 'Systrum Sistum | SSR (308046B0AF4A39CB)')
+         -> ('Systrum Sistum', 'SSR')
+    """
+    artist = sanitize_text(artist, MAX_TEXT_LEN)
+    title = sanitize_text(title, MAX_TEXT_LEN)
+    title = TRAILING_BROWSER_ID_RE.sub("", title).strip()
+
+    if not artist:
+        for separator in (" | ", " — ", " – ", " - "):
+            if separator not in title:
+                continue
+            left, right = title.split(separator, 1)
+            left = left.strip(" -—–|")
+            right = TRAILING_BROWSER_ID_RE.sub("", right).strip(" -—–|")
+            if left and right:
+                artist = left[:MAX_TEXT_LEN]
+                title = right[:MAX_TEXT_LEN]
+            break
+
+    return artist, title
 
 
 def normalize_zone(zone_name: str) -> str:
@@ -1688,8 +1712,7 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
 
         if path == "/api/signal":
             dev_id = sanitize_text(data.get("id") or f"dev_{int(time.time())}", 80)
-            artist = sanitize_text(data.get("artist"), MAX_TEXT_LEN)
-            title = sanitize_text(data.get("title"), MAX_TEXT_LEN)
+            artist, title = normalize_track_fields(data.get("artist"), data.get("title"))
             source_name = sanitize_text(data.get("sourceName") or "Android ЭХО", 60)
             zone_name = normalize_zone(data.get("zoneName"))
 
@@ -2015,6 +2038,10 @@ def start_windows_media_listener():
                 title = (props.title or "").strip()
                 app_id = session.source_app_user_model_id or "ПК плеер"
                 app_name = app_id.split(".")[-1].split("!")[-1] or "Windows"
+
+                # Веб-плееры отдают заголовок вкладки «Artist | Track (id)» —
+                # разбираем его, а не выбрасываем трек.
+                artist, title = normalize_track_fields(artist, title)
 
                 if not artist and not title:
                     return

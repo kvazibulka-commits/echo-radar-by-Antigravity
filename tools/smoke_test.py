@@ -25,7 +25,7 @@ import urllib.request
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROXY_HEADERS = {"CF-Connecting-IP": "203.0.113.7", "CF-Ray": "smoke-test"}
-JUNK_TRACK = {"artist": "", "title": "Systrum Sistum | SSR (308046B0AF4A39CB)"}
+JUNK_TRACK = {"artist": "", "title": "chrome-extension://abc/offscreen.html"}
 
 PASSED = 0
 FAILED = 0
