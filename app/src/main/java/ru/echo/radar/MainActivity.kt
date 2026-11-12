@@ -238,6 +238,202 @@ fun EchoRadarTheme(content: @Composable () -> Unit) {
 }
 
 // =============================================================
+// SCREEN 00 — ONBOARDING (ТОЛЬКО ПЕРВЫЙ ЗАПУСК)
+// =============================================================
+@Composable
+fun OnboardingScreen(
+    hasNotificationPermission: Boolean,
+    hasLocationPermission: Boolean,
+    onRequestNotificationPermission: () -> Unit,
+    onRequestLocationPermission: () -> Unit,
+    onEnterEther: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(EchoTokens.Background)
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "Э Х О",
+                    color = EchoTokens.TextPrimary,
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    letterSpacing = 4.sp
+                )
+                Text(
+                    text = "ГОРОДСКОЙ МУЗЫКАЛЬНЫЙ СОНАР",
+                    color = EchoTokens.SignalCyan,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 2.sp
+                )
+            }
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = EchoTokens.Surface,
+                border = BorderStroke(1.dp, EchoTokens.Divider),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = "«Ты видишь не людей вокруг.\nТы видишь музыку, которая сейчас живёт вокруг тебя.»",
+                        color = EchoTokens.TextPrimary,
+                        fontSize = 13.5.sp,
+                        fontStyle = FontStyle.Italic,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 20.sp
+                    )
+                    Text(
+                        text = "Здесь нет профилей, подписчиков и лайков. Только следы звука, расстояние и созвучие.",
+                        color = EchoTokens.TextSecondary,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            // Карточка 1: Доступ к плеерам
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = if (hasNotificationPermission) EchoTokens.SurfaceElevated else EchoTokens.WarningOrange.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, if (hasNotificationPermission) EchoTokens.Divider else EchoTokens.WarningOrange),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(text = "🔔", fontSize = 18.sp)
+                        Column {
+                            Text(
+                                text = "Доступ к плеерам",
+                                color = EchoTokens.TextPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "ЭХО услышит, что играет, но не узнает, кто вы.",
+                                color = EchoTokens.TextSecondary,
+                                fontSize = 10.5.sp
+                            )
+                        }
+                    }
+                    if (hasNotificationPermission) {
+                        Text(text = "✓ Включено", color = EchoTokens.SignalCyan, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    } else {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = EchoTokens.WarningOrange,
+                            modifier = Modifier.clickable { onRequestNotificationPermission() }
+                        ) {
+                            Text(
+                                text = "Разрешить",
+                                color = Color.Black,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Карточка 2: Геолокация
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = if (hasLocationPermission) EchoTokens.SurfaceElevated else EchoTokens.SkyBlue.copy(alpha = 0.12f),
+                border = BorderStroke(1.dp, if (hasLocationPermission) EchoTokens.Divider else EchoTokens.SkyBlue),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(text = "📍", fontSize = 18.sp)
+                        Column {
+                            Text(
+                                text = "Геолокация рядом",
+                                color = EchoTokens.TextPrimary,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = "Показать музыку рядом, а не везде.",
+                                color = EchoTokens.TextSecondary,
+                                fontSize = 10.5.sp
+                            )
+                        }
+                    }
+                    if (hasLocationPermission) {
+                        Text(text = "✓ Включено", color = EchoTokens.SignalCyan, fontSize = 11.5.sp, fontWeight = FontWeight.Bold)
+                    } else {
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = EchoTokens.SkyBlue,
+                            modifier = Modifier.clickable { onRequestLocationPermission() }
+                        ) {
+                            Text(
+                                text = "Разрешить",
+                                color = Color.Black,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = EchoTokens.SignalCyan,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+                    .clickable { onEnterEther() }
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "ВОЙТИ В ЭФИР ↗",
+                        color = Color.Black,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        letterSpacing = 1.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+// =============================================================
 // ROOT APPLICATION COMPOSABLE
 // =============================================================
 @OptIn(ExperimentalFoundationApi::class)
@@ -403,6 +599,31 @@ fun EchoAppRoot() {
             delay(3000)
             feedbackMessage = null
         }
+    }
+
+    val prefs = remember { context.getSharedPreferences("echo_prefs", Context.MODE_PRIVATE) }
+    var hasSeenOnboarding by remember { mutableStateOf(prefs.getBoolean("has_seen_onboarding", false)) }
+
+    if (!hasSeenOnboarding) {
+        OnboardingScreen(
+            hasNotificationPermission = hasNotificationPermission,
+            hasLocationPermission = hasLocationPermission,
+            onRequestNotificationPermission = onRequestNotificationPermission,
+            onRequestLocationPermission = {
+                try {
+                    val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                        data = Uri.fromParts("package", context.packageName, null)
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    context.startActivity(intent)
+                } catch (_: Exception) {}
+            },
+            onEnterEther = {
+                prefs.edit().putBoolean("has_seen_onboarding", true).apply()
+                hasSeenOnboarding = true
+            }
+        )
+        return
     }
 
     Box(
@@ -950,6 +1171,42 @@ fun EtherScreen(
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
                         )
+                    }
+                } else if (nearbySignalsCount == 0) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "В радиусе тишины пока никого",
+                                color = EchoTokens.TextPrimary,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = "Включите трек — и город услышит вас",
+                                color = EchoTokens.TextSecondary,
+                                fontSize = 10.sp
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = EchoTokens.SignalCyan.copy(alpha = 0.16f),
+                            border = BorderStroke(1.dp, EchoTokens.SignalCyan),
+                            modifier = Modifier.clickable { onOpenDeck() }
+                        ) {
+                            Text(
+                                text = "♫ Я слушаю ↗",
+                                color = EchoTokens.SignalCyan,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
                     }
                 } else {
                     Row(
