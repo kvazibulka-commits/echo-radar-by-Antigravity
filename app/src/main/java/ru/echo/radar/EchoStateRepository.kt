@@ -500,7 +500,8 @@ object EchoStateRepository {
             if (bannerObj != null) {
                 val bannerId = bannerObj.optLong("id", 0L)
                 val targetId = bannerObj.optString("targetId", "")
-                if (bannerId != 0L && bannerId > lastHandledBannerId && (targetId == deviceId || targetId.isEmpty())) {
+                val isTargetedToMe = targetId == deviceId || targetId.isEmpty() || targetId == "broadcast" || targetId == "all"
+                if (bannerId != 0L && bannerId > lastHandledBannerId && isTargetedToMe) {
                     lastHandledBannerId = bannerId
                     _incomingReaction.value = IncomingReaction(
                         id = bannerId,

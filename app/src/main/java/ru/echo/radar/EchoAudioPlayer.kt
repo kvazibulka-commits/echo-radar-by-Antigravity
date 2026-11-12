@@ -1,7 +1,11 @@
 package ru.echo.radar
 
+import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaPlayer
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -9,6 +13,9 @@ import kotlinx.coroutines.flow.asStateFlow
 
 object EchoAudioPlayer {
     private var mediaPlayer: MediaPlayer? = null
+    private var audioManager: AudioManager? = null
+    private var focusRequest: AudioFocusRequest? = null
+
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
@@ -17,6 +24,57 @@ object EchoAudioPlayer {
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
+
+    private val afChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
+        when (focusChange) {
+            AudioManager.AUDIOFOCUS_LOSS,
+            AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
+                pause()
+            }
+            AudioManager.AUDIOFOCUS_GAIN -> {
+                // Фокус возвращен
+            }
+        }
+    }
+
+    fun init(context: Context) {
+        audioManager = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    }
+
+    private fun requestFocus(): Boolean {
+        val am = audioManager ?: return true
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val playbackAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build()
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                .setAudioAttributes(playbackAttributes)
+                .setAcceptsDelayedFocusGain(false)
+                .setOnAudioFocusChangeListener(afChangeListener)
+                .build()
+            focusRequest = request
+            am.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        } else {
+            @Suppress("DEPRECATION")
+            am.requestAudioFocus(
+                afChangeListener,
+                AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT
+            ) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        }
+    }
+
+    private fun abandonFocus() {
+        val am = audioManager ?: return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            focusRequest?.let { am.abandonAudioFocusRequest(it) }
+            focusRequest = null
+        } else {
+            @Suppress("DEPRECATION")
+            am.abandonAudioFocus(afChangeListener)
+        }
+    }
 
     fun toggle(artist: String, title: String, previewUrl: String?) {
         if (previewUrl.isNullOrBlank()) return
@@ -31,6 +89,7 @@ object EchoAudioPlayer {
     fun play(key: String, url: String) {
         try {
             stop()
+            requestFocus() // Ставит на паузу Яндекс Музыку / VK / Spotify!
             _activeTrackKey.value = key
             _isLoading.value = true
 
@@ -51,12 +110,14 @@ object EchoAudioPlayer {
                     _isPlaying.value = false
                     _isLoading.value = false
                     _activeTrackKey.value = null
+                    abandonFocus() // Возобновляет Яндекс Музыку
                 }
                 setOnErrorListener { _, what, extra ->
                     Log.w("EchoAudioPlayer", "Playback error: $what, $extra")
                     _isPlaying.value = false
                     _isLoading.value = false
                     _activeTrackKey.value = null
+                    abandonFocus()
                     true
                 }
                 prepareAsync()
@@ -66,6 +127,7 @@ object EchoAudioPlayer {
             _isPlaying.value = false
             _isLoading.value = false
             _activeTrackKey.value = null
+            abandonFocus()
         }
     }
 
@@ -75,6 +137,7 @@ object EchoAudioPlayer {
         try {
             mediaPlayer?.pause()
             _isPlaying.value = false
+            abandonFocus()
         } catch (e: Exception) {}
     }
 
@@ -86,6 +149,7 @@ object EchoAudioPlayer {
             _isPlaying.value = false
             _isLoading.value = false
             _activeTrackKey.value = null
+            abandonFocus()
         } catch (e: Exception) {}
     }
 }

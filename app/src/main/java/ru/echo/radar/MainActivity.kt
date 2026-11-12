@@ -225,6 +225,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         EchoStateRepository.init(this)
         EchoSoundManager.init(this)
+        EchoAudioPlayer.init(this)
         EchoChronicleManager.init(this)
         EchoBleManager.init(this)
         EchoBleManager.startScanning(this)
@@ -689,8 +690,21 @@ fun EchoAppRoot() {
     var feedbackMessage by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(feedbackMessage) {
         if (feedbackMessage != null) {
-            delay(3000)
+            delay(3500)
             feedbackMessage = null
+        }
+    }
+
+    // Слушатель входящих реакций и откликов из эфира / с ПК
+    val incomingReaction by EchoStateRepository.incomingReaction.collectAsState()
+    LaunchedEffect(incomingReaction) {
+        incomingReaction?.let { reaction ->
+            EchoSoundManager.playTick()
+            EchoSoundManager.playWavePulse()
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            feedbackMessage = "${reaction.symbol} ${reaction.message}"
+            delay(4500)
+            EchoStateRepository.dismissIncomingReaction()
         }
     }
 
@@ -993,6 +1007,8 @@ fun EtherScreen(
     onRequestPermission: () -> Unit,
     onRequestNotificationPermission: () -> Unit
 ) {
+    var showCachesOnRadar by remember { mutableStateOf(true) }
+
     Column(modifier = Modifier.fillMaxSize()) {
         // Header
         Row(
@@ -1045,6 +1061,22 @@ fun EtherScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                // Тумблер: Показать / скрыть тайники
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (showCachesOnRadar) EchoTokens.PurpleResonance.copy(alpha = 0.16f) else EchoTokens.Surface,
+                    border = BorderStroke(1.dp, if (showCachesOnRadar) EchoTokens.PurpleResonance.copy(alpha = 0.7f) else EchoTokens.Divider),
+                    modifier = Modifier.clickable { showCachesOnRadar = !showCachesOnRadar }
+                ) {
+                    Text(
+                        text = if (showCachesOnRadar) "🟣 Тайники" else "⚪ Без тайников",
+                        color = if (showCachesOnRadar) EchoTokens.PurpleResonance else EchoTokens.TextSecondary,
+                        fontSize = 10.5.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
+                    )
+                }
+
                 // Тумблер: «В эфире» / «Невидимка»
                 Surface(
                     shape = RoundedCornerShape(14.dp),
@@ -1214,8 +1246,9 @@ fun EtherScreen(
                 .fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
+            val displayVinyls = if (showCachesOnRadar) allVinyls else allVinyls.filter { !it.isCapsule }
             VinylCityMapCanvas(
-                allVinyls = allVinyls,
+                allVinyls = displayVinyls,
                 selectedVinyl = selectedVinyl,
                 thermalPatches = thermalPatches,
                 needleSyncedTargets = needleSyncedTargets,
@@ -1543,36 +1576,24 @@ fun DeckScreen(
                 overflow = TextOverflow.Ellipsis
             )
 
-            // Аккуратный бейдж ЖАНРА
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = EchoTokens.SurfaceElevated,
-                border = BorderStroke(1.dp, EchoTokens.Divider),
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.padding(top = 2.dp)
             ) {
                 Text(
-                    text = "♫  ${activeTrack.genre.uppercase()}",
-                    color = EchoTokens.SignalCyan,
+                    text = "♫  ${activeTrack.genre.uppercase()} · ${activeTrack.sourceApp}",
+                    color = EchoTokens.SignalCyan.copy(alpha = 0.85f),
                     fontSize = 11.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 0.8.sp,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp)
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 0.8.sp
                 )
-            }
-
-            if (isNeedleSynced) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = EchoTokens.Gold.copy(alpha = 0.16f),
-                    border = BorderStroke(1.dp, EchoTokens.Gold.copy(alpha = 0.7f)),
-                    modifier = Modifier.padding(top = 2.dp)
-                ) {
+                if (isNeedleSynced) {
                     Text(
-                        text = "🪡 СЛУШАЕТЕ В УНИСОН",
+                        text = "• 🪡 В унисоне",
                         color = EchoTokens.Gold,
-                        fontSize = 9.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -1714,53 +1735,53 @@ fun DeckScreen(
             }
         }
 
-        // G. Акустический паспорт (здесь аккуратно спрятаны BPM и Camelot!)
-        Surface(
-            shape = RoundedCornerShape(14.dp),
-            color = EchoTokens.Surface,
-            border = BorderStroke(0.8.dp, EchoTokens.Divider),
+        // G. Акустический паспорт (чистый минималистичный аккордеон без лишних коробок)
+        HorizontalDivider(color = EchoTokens.Divider.copy(alpha = 0.6f), thickness = 0.8.dp, modifier = Modifier.padding(top = 8.dp))
+
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clickable { isSignalDetailsExpanded = !isSignalDetailsExpanded }
+                .padding(vertical = 10.dp, horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "АКУСТИЧЕСКИЙ ПАСПОРТ (BPM & ТАКТ)",
-                        color = EchoTokens.TextSecondary,
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        letterSpacing = 1.sp
-                    )
-                    Text(
-                        text = if (isSignalDetailsExpanded) "▲" else "▼",
-                        color = EchoTokens.TextSecondary,
-                        fontSize = 11.sp
-                    )
-                }
+            Text(
+                text = "АКУСТИЧЕСКИЙ ПАСПОРТ (BPM & ТАКТ)",
+                color = EchoTokens.TextSecondary,
+                fontSize = 10.5.sp,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 1.sp
+            )
+            Text(
+                text = if (isSignalDetailsExpanded) "▲ Свернуть" else "▼ Детали ↗",
+                color = EchoTokens.SkyBlue,
+                fontSize = 11.sp
+            )
+        }
 
-                if (isSignalDetailsExpanded) {
-                    Spacer(modifier = Modifier.height(8.dp))
+        if (isSignalDetailsExpanded) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = "• Темп: ${activeTrack.bpm} BPM   • Тональность: Camelot ${activeTrack.camelotKey}\n• Жанр: ${activeTrack.genre}   • Дистанция: ${activeTrack.distanceLabel}\n• Источник: ${activeTrack.sourceApp}",
+                    color = EchoTokens.TextPrimary,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 16.sp
+                )
+                if (activeTrack.observation.isNotBlank()) {
+                    Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = "• Темп: ${activeTrack.bpm} BPM\n• Тональность: Camelot ${activeTrack.camelotKey}\n• Жанр: ${activeTrack.genre}\n• Дистанция: ${activeTrack.distanceLabel}\n• Источник: ${activeTrack.sourceApp}",
-                        color = EchoTokens.TextPrimary,
+                        text = "«${activeTrack.observation}»",
+                        color = EchoTokens.SkyBlue,
                         fontSize = 11.sp,
-                        fontFamily = FontFamily.Monospace,
-                        lineHeight = 16.sp
+                        fontStyle = FontStyle.Italic
                     )
-                    if (activeTrack.observation.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "«${activeTrack.observation}»",
-                            color = EchoTokens.SkyBlue,
-                            fontSize = 11.sp,
-                            fontStyle = FontStyle.Italic
-                        )
-                    }
                 }
             }
         }
@@ -2469,22 +2490,6 @@ fun MiniPlayer(
                     )
                 }
             }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .background(EchoTokens.Divider)
-            ) {
-                if (isAudioPlaying) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(0.45f)
-                            .background(EchoTokens.SignalCyan)
-                    )
-                }
-            }
         }
     }
 }
@@ -2971,10 +2976,6 @@ fun VinylCityMapCanvas(
                             val targetVinyl = longClickedVinyl
                             if (targetVinyl != null) {
                                 onVinylLongClicked(targetVinyl)
-                            } else {
-                                val nx = (tapOffset.x / size.width).coerceIn(0f, 1f)
-                                val ny = (tapOffset.y / size.height).coerceIn(0f, 1f)
-                                onMapLongPressed(nx, ny)
                             }
                         }
                     )
