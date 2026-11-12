@@ -1246,9 +1246,9 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
             dev_id = query.get("deviceId", [None])[0] or self.headers.get("X-Device-Id")
             self._send_json(build_state_payload(for_device_id=dev_id))
         elif path in ("/", "/index.html"):
-            self._send_html(DASHBOARD_HTML)
+            self._send_html(_load_template("dashboard.html"))
         elif path in ("/app", "/pwa"):
-            self._send_html(PWA_HTML)
+            self._send_html(_load_template("pwa.html"))
         else:
             self._send_json({"status": "ok", "endpoint": path})
 

@@ -171,6 +171,7 @@ object EchoStateRepository {
 
     private var pollingJob: Job? = null
     private var lastSentTrack: Pair<String, String>? = null
+    private var lastKeepaliveTime: Long = 0L
     private var consecutiveErrors = 0
 
     fun init(context: Context) {
@@ -241,6 +242,16 @@ object EchoStateRepository {
     fun sanitizeMusicInfo(rawArtist: String, rawTitle: String): Pair<String, String> {
         var cleanArtist = rawArtist.trim()
         var cleanTitle = rawTitle.trim()
+
+        // 0. Если в качестве артиста передано название плеера / сервиса
+        val playerNames = setOf(
+            "яндекс музыка", "yandex music", "vk музыка", "vk music", "вконтакте",
+            "spotify", "звук", "sberzvuk", "youtube music", "youtube", "aimp",
+            "poweramp", "apple music", "музыка", "плеер", "android"
+        )
+        if (playerNames.contains(cleanArtist.lowercase())) {
+            cleanArtist = ""
+        }
 
         // 1. Очищаем аудио/видео расширения файлов
         val extRegex = Regex("""\.(mp[34]|opus|m4a|wav|flac|ogg|aac|webm)$""", RegexOption.IGNORE_CASE)
@@ -368,6 +379,19 @@ object EchoStateRepository {
             }
 
             consecutiveErrors = 0
+
+            // Периодический keepalive (каждые 25 секунд) для поддержания активного статуса на сервере
+            val now = System.currentTimeMillis()
+            val curTrack = _currentTrack.value
+            if (_presenceActive.value && curTrack.artist != "Ожидание музыки..." && curTrack.artist.isNotBlank()) {
+                if (now - lastKeepaliveTime > 25000L) {
+                    lastKeepaliveTime = now
+                    scope.launch {
+                        sendSignalToServer(curTrack.artist, curTrack.title, curTrack.sourceApp)
+                    }
+                }
+            }
+
             val json = JSONObject(body)
 
             // 1. Парсинг живых сигналов слушателей

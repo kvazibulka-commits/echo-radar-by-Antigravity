@@ -21,22 +21,28 @@ class EchoMediaListenerService : NotificationListenerService() {
         inspectControllers(controllers)
     }
 
+    companion object {
+        var instance: EchoMediaListenerService? = null
+            private set
+    }
+
     override fun onListenerConnected() {
         super.onListenerConnected()
+        instance = this
         Log.i(tag, "EchoMediaListenerService подключен к системному сервису уведомлений")
         try {
             mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
             val componentName = ComponentName(this, EchoMediaListenerService::class.java)
-            val activeControllers = mediaSessionManager?.getActiveSessions(componentName)
-            inspectControllers(activeControllers)
             mediaSessionManager?.addOnActiveSessionsChangedListener(sessionsChangedListener, componentName)
         } catch (e: Exception) {
             Log.e(tag, "Ошибка при подключении MediaSessionManager: ${e.message}")
         }
+        scanActiveMusic()
     }
 
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
+        instance = null
         Log.i(tag, "EchoMediaListenerService отключен")
         cleanupCallbacks()
         try {
@@ -51,26 +57,57 @@ class EchoMediaListenerService : NotificationListenerService() {
         controllerCallbacks.clear()
     }
 
+    fun scanActiveMusic() {
+        // 1. Проверяем активные MediaSession controllers
+        try {
+            val componentName = ComponentName(this, EchoMediaListenerService::class.java)
+            val controllers = mediaSessionManager?.getActiveSessions(componentName)
+            if (controllers != null && controllers.isNotEmpty()) {
+                inspectControllers(controllers)
+            }
+        } catch (e: Exception) {
+            Log.d(tag, "getActiveSessions skipped: ${e.message}")
+        }
+
+        // 2. Проверяем активные уведомления в статус-баре
+        try {
+            val activeNotifs = activeNotifications
+            if (activeNotifs != null) {
+                for (sbn in activeNotifs) {
+                    processNotification(sbn)
+                }
+            }
+        } catch (e: Exception) {
+            Log.d(tag, "activeNotifications scan error: ${e.message}")
+        }
+    }
+
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
         if (sbn == null) return
+        processNotification(sbn)
+    }
 
+    private fun processNotification(sbn: StatusBarNotification) {
         val extras = sbn.notification?.extras ?: return
         val pkg = sbn.packageName.lowercase()
 
-        // 1. Проверяем сигнатуры медиа-уведомления
+        // Проверяем сигнатуры медиа-уведомления
         val hasMediaSession = extras.get("android.mediaSession") != null
         val template = extras.getString(Notification.EXTRA_TEMPLATE) ?: ""
         val isMediaStyle = template.contains("MediaStyle")
         val isMusicApp = hasMediaSession || isMediaStyle ||
                 pkg.contains("music") || pkg.contains("audio") || pkg.contains("player") ||
                 pkg.contains("yandex") || pkg.contains("spotify") || pkg.contains("zvuk") ||
-                pkg.contains("vkontakte") || pkg.contains("vk.music") || pkg.contains("sound")
+                pkg.contains("vkontakte") || pkg.contains("vk.music") || pkg.contains("sound") ||
+                pkg.contains("aimp") || pkg.contains("poweramp")
 
         if (isMusicApp) {
-            val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim() ?: ""
-            val artist = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim()
+            var title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString()?.trim() ?: ""
+            var artist = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString()?.trim()
+                ?: extras.getCharSequence(Notification.EXTRA_BIG_TEXT)?.toString()?.trim()
                 ?: extras.getCharSequence(Notification.EXTRA_SUB_TEXT)?.toString()?.trim()
+                ?: extras.getCharSequence(Notification.EXTRA_INFO_TEXT)?.toString()?.trim()
                 ?: ""
 
             if (title.isNotBlank()) {
@@ -100,7 +137,6 @@ class EchoMediaListenerService : NotificationListenerService() {
         if (controllers.isNullOrEmpty()) return
 
         for (controller in controllers) {
-            // Регистрируем коллбек для отслеживания смены трека и паузы внутри сессии
             val callback = object : MediaController.Callback() {
                 override fun onMetadataChanged(metadata: MediaMetadata?) {
                     handleControllerUpdate(controller)
