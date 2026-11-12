@@ -340,11 +340,13 @@ object EchoStateRepository {
             else -> Pair(118, "8B")
         }
 
+        val (genPersona, genObs) = AlbumArtResolver.generatePoeticArchetype(cleanArtist, cleanTitle, inferredGenre)
+
         _currentTrack.value = cur.copy(
             artist = cleanArtist,
             title = cleanTitle,
             sourceApp = readableSource,
-            poeticPersona = if (cur.title != cleanTitle) "Генерируется куратором..." else cur.poeticPersona,
+            poeticPersona = genPersona,
             mood = "Живое присутствие",
             isPlaying = isPlaying,
             genre = inferredGenre,

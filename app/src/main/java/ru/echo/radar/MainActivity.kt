@@ -142,14 +142,19 @@ fun PlayingTrack.toVinylTrack(): VinylTrack {
     } else {
         AlbumArtResolver.detectLocalGenre(artist, title)
     }
+    val (pTitle, pObs) = AlbumArtResolver.generatePoeticArchetype(artist, title, effectiveGenre)
+    val finalPersona = if (poeticPersona.isNotBlank() && !poeticPersona.startsWith("Генерируется") && !poeticPersona.startsWith("Архивариус ночных шорохов")) {
+        poeticPersona
+    } else pTitle
+
     return VinylTrack(
         id = "self_user_vinyl",
         title = title,
         artist = artist,
         sourceApp = sourceApp,
         distanceLabel = "Вы • В эфире",
-        poeticPersona = poeticPersona,
-        observation = "Ваша текущая музыкальная аура звучит в городе.",
+        poeticPersona = finalPersona,
+        observation = pObs,
         story = "Ваш личный звуковой маяк транслирует эту мелодию в эфир.",
         compatibility = 100,
         angleDeg = 0f,
@@ -1294,6 +1299,19 @@ fun EtherScreen(
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.Center
                     ) {
+                        val isHighRes = selectedVinyl.compatibility >= 80
+                        val isLowRes = selectedVinyl.compatibility < 50
+                        val tagColor = when {
+                            isHighRes -> EchoTokens.Gold
+                            isLowRes -> Color(0xFFA78BFA)
+                            else -> EchoTokens.SignalCyan
+                        }
+                        val tagLabel = when {
+                            isHighRes -> "✦ ${selectedVinyl.compatibility}% РЕЗОНАНС"
+                            isLowRes -> "⚡ ${selectedVinyl.compatibility}% КОНТРАСТ"
+                            else -> "♫ ${selectedVinyl.compatibility}% СОЗВУЧИЕ"
+                        }
+
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -1302,21 +1320,28 @@ fun EtherScreen(
                                 modifier = Modifier
                                     .size(6.dp)
                                     .clip(CircleShape)
-                                    .background(EchoTokens.SignalCyan)
+                                    .background(tagColor)
                             )
                             Text(
-                                text = "${selectedVinyl.compatibility}% РЕЗОНАНС · ${selectedVinyl.distanceLabel}",
-                                color = EchoTokens.SignalCyan,
+                                text = "$tagLabel · ${selectedVinyl.distanceLabel}",
+                                color = tagColor,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 letterSpacing = 0.8.sp
                             )
                         }
                         Text(
-                            text = "${selectedVinyl.title} — ${selectedVinyl.artist}",
+                            text = if (selectedVinyl.poeticPersona.isNotBlank()) "«${selectedVinyl.poeticPersona}»" else "${selectedVinyl.title} — ${selectedVinyl.artist}",
                             color = EchoTokens.TextPrimary,
-                            fontSize = 12.5.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "${selectedVinyl.title} — ${selectedVinyl.artist}",
+                            color = EchoTokens.SkyBlue,
+                            fontSize = 10.5.sp,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1561,11 +1586,29 @@ fun DeckScreen(
             TonearmOverlay(isSpinning = isSpinning)
         }
 
-        // C. Метаданные трека + Жанр (BPM и Camelot спрятаны в паспорт по просьбе пользователя!)
+        // C. Метаданные трека + Архетип + Жанр
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            if (activeTrack.poeticPersona.isNotBlank()) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = EchoTokens.SignalCyan.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, EchoTokens.SignalCyan.copy(alpha = 0.40f)),
+                    modifier = Modifier.padding(bottom = 2.dp)
+                ) {
+                    Text(
+                        text = "✦ ${activeTrack.poeticPersona.uppercase()}",
+                        color = EchoTokens.Gold,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
             Text(
                 text = activeTrack.title,
                 color = EchoTokens.TextPrimary,
@@ -1757,7 +1800,7 @@ fun DeckScreen(
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "АКУСТИЧЕСКИЙ ПАСПОРТ (BPM & ТАКТ)",
+                text = "АКУСТИЧЕСКИЙ ПАСПОРТ ТРЕКА",
                 color = EchoTokens.TextSecondary,
                 fontSize = 10.5.sp,
                 fontFamily = FontFamily.Monospace,
@@ -1777,9 +1820,14 @@ fun DeckScreen(
                     .padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
+                val albumDisplay = mediaInfo.albumName?.takeIf { it.isNotBlank() } ?: "Сингл / Релиз"
                 Text(
-                    text = "• Темп: ${activeTrack.bpm} BPM   • Тональность: Camelot ${activeTrack.camelotKey}\n• Жанр: $effectiveGenre   • Дистанция: ${activeTrack.distanceLabel}\n• Источник: ${activeTrack.sourceApp}",
+                    text = "• Трек: ${activeTrack.title}\n• Артист: ${activeTrack.artist}\n• Альбом: $albumDisplay\n• Жанр: $effectiveGenre\n• Источник: ${activeTrack.sourceApp}   • Дистанция: ${activeTrack.distanceLabel}",
                     color = EchoTokens.TextPrimary,
+                    fontSize = 11.5.sp,
+                    fontFamily = FontFamily.Monospace,
+                    lineHeight = 17.sp
+                )
                     fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     lineHeight = 16.sp
@@ -3101,44 +3149,63 @@ fun VinylCityMapCanvas(
                 val pos = Offset(vx, vy)
 
                 val isSynced = needleSyncedTargets.contains(vinyl.id)
-                val vinylBaseColor = if (isPc) EchoTokens.SignalCyan else Color(vinyl.colorHex)
+                val isHighRes = vinyl.compatibility >= 80
+                val isLowRes = vinyl.compatibility < 50
+
+                val vinylBaseColor = when {
+                    isPc -> EchoTokens.SignalCyan
+                    isHighRes -> EchoTokens.Gold
+                    isLowRes -> Color(0xFF6B7280) // Приглушенный серо-фиолетовый для диссонанса/контраста
+                    else -> Color(vinyl.colorHex)
+                }
                 val ghostAlpha = if (vinyl.isGhost) 0.42f else 1.0f
 
-                // ПЛАВНАЯ ГЛАДКАЯ СИНУСОИДА (72 сегмента для исключения ломаных линий!)
-                if (isFocused) {
-                    val chordResonance = vinyl.compatibility
-                    if (chordResonance >= 80) {
-                        val chordPath = Path().apply {
-                            moveTo(center.x, center.y)
-                            val segments = 72
-                            val dx = (pos.x - center.x) / segments
-                            val dy = (pos.y - center.y) / segments
-                            val nx = -dy * 0.12f
-                            val ny = dx * 0.12f
-                            for (s in 1..segments) {
-                                val wave = sin(s * 0.32f + laserPhotonProgress * 10f).toFloat() * 7.dp.toPx()
-                                lineTo(center.x + dx * s + nx * wave, center.y + dy * s + ny * wave)
-                            }
+                // МЕХАНИКА РЕЗОНАНСНОГО ЛУЧА (Акустический мост при созвучии жанров или выборе)
+                if (isHighRes || isFocused) {
+                    val beamAlpha = if (isFocused) 0.85f else (0.32f * neonPulse)
+                    val beamColor = if (isHighRes) EchoTokens.Gold else EchoTokens.SignalCyan
+
+                    val chordPath = Path().apply {
+                        moveTo(center.x, center.y)
+                        val segments = 72
+                        val dx = (pos.x - center.x) / segments
+                        val dy = (pos.y - center.y) / segments
+                        val nx = -dy * 0.12f
+                        val ny = dx * 0.12f
+                        for (s in 1..segments) {
+                            val wave = sin(s * 0.32f + laserPhotonProgress * 10f).toFloat() * 6.5.dp.toPx()
+                            lineTo(center.x + dx * s + nx * wave, center.y + dy * s + ny * wave)
                         }
-                        drawPath(path = chordPath, color = EchoTokens.SignalCyan.copy(alpha = 0.80f), style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round))
-                    } else {
-                        drawLine(
-                            brush = Brush.linearGradient(
-                                colors = listOf(EchoTokens.SignalCyan.copy(alpha = 0.65f), vinylBaseColor.copy(alpha = 0.85f)),
-                                start = center,
-                                end = pos
-                            ),
-                            start = center,
-                            end = pos,
-                            strokeWidth = 1.5.dp.toPx()
-                        )
                     }
+                    drawPath(
+                        path = chordPath,
+                        color = beamColor.copy(alpha = beamAlpha),
+                        style = Stroke(width = if (isFocused) 1.8.dp.toPx() else 1.2.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                } else if (isLowRes && isFocused) {
+                    // Пунктирный луч диссонанса при выборе точки с акустическим контрастом (рэп vs метал)
+                    drawLine(
+                        color = Color(0xFF64748B).copy(alpha = 0.50f),
+                        start = center,
+                        end = pos,
+                        strokeWidth = 1.dp.toPx(),
+                        pathEffect = PathEffect.dashPathEffect(floatArrayOf(4f, 6f), 0f)
+                    )
+                }
+
+                // Аура резонанса (Точка с хорошим совпадением)
+                if (isHighRes) {
+                    drawCircle(
+                        color = EchoTokens.Gold.copy(alpha = 0.20f * neonPulse),
+                        radius = 24.dp.toPx() * neonPulse,
+                        center = pos
+                    )
                 }
 
                 // Выделение выбранного маркера
                 if (isFocused) {
                     drawCircle(
-                        color = EchoTokens.SignalCyan.copy(alpha = 0.40f * neonPulse),
+                        color = (if (isHighRes) EchoTokens.Gold else EchoTokens.SignalCyan).copy(alpha = 0.40f * neonPulse),
                         radius = 26.dp.toPx() * neonPulse,
                         center = pos,
                         style = Stroke(width = 1.5.dp.toPx())
@@ -3156,13 +3223,16 @@ fun VinylCityMapCanvas(
                 }
 
                 // Тело пластинки
-                val discRadius = (if (isFocused) 15.dp else if (isPc) 13.dp else 11.dp).toPx()
+                val discRadius = (if (isFocused) 15.dp else if (isHighRes) 13.dp else if (isLowRes) 9.dp else 11.dp).toPx()
                 drawCircle(color = Color(0xFF141720).copy(alpha = ghostAlpha), radius = discRadius, center = pos)
                 drawCircle(
-                    color = if (isFocused) vinylBaseColor.copy(alpha = ghostAlpha) else Color(0xFF2D3748).copy(alpha = ghostAlpha),
+                    color = if (isFocused) vinylBaseColor.copy(alpha = ghostAlpha) else (if (isHighRes) EchoTokens.Gold.copy(alpha = 0.75f) else Color(0xFF2D3748).copy(alpha = ghostAlpha)),
                     radius = discRadius,
                     center = pos,
-                    style = Stroke(width = if (isFocused) 1.8.dp.toPx() else 1.dp.toPx())
+                    style = Stroke(
+                        width = if (isFocused) 1.8.dp.toPx() else 1.dp.toPx(),
+                        pathEffect = if (isLowRes) PathEffect.dashPathEffect(floatArrayOf(3f, 3f), 0f) else null
+                    )
                 )
                 drawCircle(color = vinylBaseColor.copy(alpha = ghostAlpha), radius = discRadius * 0.38f, center = pos)
                 drawCircle(color = Color.Black.copy(alpha = ghostAlpha), radius = discRadius * 0.12f, center = pos)
