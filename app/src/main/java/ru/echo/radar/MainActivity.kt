@@ -44,6 +44,7 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
@@ -3043,9 +3044,11 @@ fun VinylCityMapCanvas(
         val center = Offset(widthPx / 2f, heightPx / 2f)
         val maxR = minOf(widthPx, heightPx) * 0.44f
 
+        val density = LocalDensity.current
+        val minDistancePx = remember(density) { with(density) { 70.dp.toPx() } }
         val displayVinyls = remember(allVinyls) { allVinyls.filter { !it.isSelf } }
-        val positions = remember(displayVinyls, center, maxR) {
-            calculateVinylMapPositions(displayVinyls, center, maxR, 70.dp.toPx())
+        val positions = remember(displayVinyls, center, maxR, minDistancePx) {
+            calculateVinylMapPositions(displayVinyls, center, maxR, minDistancePx)
         }
 
         Canvas(
