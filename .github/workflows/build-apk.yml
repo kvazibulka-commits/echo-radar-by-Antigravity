@@ -1,4 +1,4 @@
-name: Сборка ЭХО Android APK (Echo Radar)
+name: Сборка ЭХО Android APK (для BlueStacks и смартфонов)
 
 on:
   push:
@@ -30,11 +30,11 @@ jobs:
 
       - name: 5. Переименование APK для удобства
         run: |
-          cp app/build/outputs/apk/debug/app-debug.apk echo-radar-debug.apk
+          cp app/build/outputs/apk/debug/app-debug.apk echo-bluestacks-debug.apk
 
       - name: 6. Публикация готового APK для скачивания
         uses: actions/upload-artifact@v4
         with:
-          name: echo-radar-apk
-          path: echo-radar-debug.apk
+          name: echo-bluestacks-apk
+          path: echo-bluestacks-debug.apk
           retention-days: 30

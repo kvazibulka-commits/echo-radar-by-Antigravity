@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -3413,5 +3414,54 @@ fun calculateTimeAgo(timestampSec: Long): String {
         diff < 3600 -> "${diff / 60} мин назад"
         diff < 86400 -> "${diff / 3600} ч назад"
         else -> "${diff / 86400} дн назад"
+    }
+}
+
+// =============================================================
+// COMPOSE PREVIEWS (Для рендеринга и визуального контроля в Antigravity)
+// =============================================================
+
+@Preview(name = "Навигационный док", showBackground = true, backgroundColor = 0xFF08080C)
+@Composable
+fun NavigationDockPreview() {
+    EchoRadarTheme {
+        NavigationDock(
+            currentScreen = EchoScreen.ETHER,
+            onScreenSelected = {}
+        )
+    }
+}
+
+@Preview(name = "Онбординг (Первый запуск)", showBackground = true, backgroundColor = 0xFF08080C)
+@Composable
+fun OnboardingScreenPreview() {
+    EchoRadarTheme {
+        OnboardingScreen(
+            hasNotificationPermission = false,
+            hasLocationPermission = false,
+            onRequestNotificationPermission = {},
+            onRequestLocationPermission = {},
+            onEnterEther = {}
+        )
+    }
+}
+
+@Preview(name = "Легенда сонара", showBackground = true, backgroundColor = 0xFF11161F)
+@Composable
+fun LegendRowPreview() {
+    EchoRadarTheme {
+        Column(modifier = Modifier.padding(16.dp)) {
+            LegendRow(
+                color = EchoTokens.AcousticGold,
+                title = "Высокое созвучие (≥ 80%)",
+                desc = "Аналоговые золотые волны резонанса"
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            LegendRow(
+                color = EchoTokens.SignalCyan,
+                title = "Живой эфир",
+                desc = "Прямой перехват музыки вокруг"
+            )
+        }
     }
 }
