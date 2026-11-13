@@ -1078,8 +1078,23 @@ fun EtherScreen(
                         letterSpacing = 1.sp
                     )
                 }
+                val capsulesCount = if (showCachesOnRadar) allVinyls.count { it.isCapsule } else 0
+                val sigPlural = when {
+                    nearbySignalsCount % 10 == 1 && nearbySignalsCount % 100 != 11 -> "сигнал"
+                    nearbySignalsCount % 10 in 2..4 && nearbySignalsCount % 100 !in 12..14 -> "сигнала"
+                    else -> "сигналов"
+                }
+                val subtitleText = when {
+                    nearbySignalsCount > 0 && capsulesCount > 0 ->
+                        "Басманный • $nearbySignalsCount $sigPlural · $capsulesCount тайников"
+                    nearbySignalsCount > 0 ->
+                        "Басманный • $nearbySignalsCount $sigPlural в эфире"
+                    capsulesCount > 0 ->
+                        "Басманный • $capsulesCount тайников"
+                    else -> "Басманный • Эфир спокоен"
+                }
                 Text(
-                    text = if (nearbySignalsCount > 0) "Басманный • $nearbySignalsCount сигнала" else "Басманный • Эфир спокоен",
+                    text = subtitleText,
                     color = EchoTokens.TextSecondary,
                     fontSize = 10.5.sp
                 )
@@ -1513,41 +1528,46 @@ fun DeckScreen(
                 overflow = TextOverflow.Ellipsis
             )
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp),
                 modifier = Modifier.padding(top = 2.dp)
             ) {
                 Text(
                     text = "♫  ${effectiveGenre.uppercase()} · ${activeTrack.sourceApp}",
                     color = EchoTokens.SignalCyan.copy(alpha = 0.85f),
-                    fontSize = 11.5.sp,
+                    fontSize = 11.sp,
                     fontFamily = FontFamily.Monospace,
                     letterSpacing = 0.8.sp
                 )
-                if (!activeTrack.isSelf) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = EchoTokens.Gold.copy(alpha = 0.15f),
-                        border = BorderStroke(0.8.dp, EchoTokens.Gold.copy(alpha = 0.45f))
-                    ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (!activeTrack.isSelf) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = EchoTokens.Gold.copy(alpha = 0.15f),
+                            border = BorderStroke(0.8.dp, EchoTokens.Gold.copy(alpha = 0.45f))
+                        ) {
+                            Text(
+                                text = "${activeTrack.compatibility}% СОЗВУЧИЕ",
+                                color = EchoTokens.Gold,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    if (isNeedleSynced) {
                         Text(
-                            text = "${activeTrack.compatibility}% СОЗВУЧИЕ",
+                            text = "• 🪡 Игла в унисоне",
                             color = EchoTokens.Gold,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
-                }
-                if (isNeedleSynced) {
-                    Text(
-                        text = "• 🪡 В унисоне",
-                        color = EchoTokens.Gold,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
                 }
             }
         }
@@ -2199,7 +2219,7 @@ fun CachesScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    listOf("250м", "500м", "1000м").forEachIndexed { idx, radiusText ->
+                    listOf("250 м", "500 м", "1 км").forEachIndexed { idx, radiusText ->
                         Surface(
                             shape = RoundedCornerShape(8.dp),
                             color = if (selectedRadiusIndex == idx) EchoTokens.VinylAmber.copy(alpha = 0.22f) else EchoTokens.SurfaceElevated,
@@ -2207,12 +2227,12 @@ fun CachesScreen(
                             modifier = Modifier.clickable { selectedRadiusIndex = idx }
                         ) {
                             Text(
-                                text = "РАДИУС: $radiusText",
+                                text = radiusText,
                                 color = if (selectedRadiusIndex == idx) EchoTokens.VinylAmber else EchoTokens.TextSecondary,
-                                fontSize = 9.sp,
+                                fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace,
                                 fontWeight = if (selectedRadiusIndex == idx) FontWeight.Bold else FontWeight.Normal,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                             )
                         }
                     }
@@ -2259,32 +2279,28 @@ fun CachesScreen(
 
                             Column(modifier = Modifier.weight(1f)) {
                                 if (isVenue) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = EchoTokens.VinylAmber.copy(alpha = 0.16f),
+                                        border = BorderStroke(0.8.dp, EchoTokens.VinylAmber),
+                                        modifier = Modifier.padding(bottom = 2.dp)
                                     ) {
-                                        Surface(
-                                            shape = RoundedCornerShape(4.dp),
-                                            color = EchoTokens.VinylAmber.copy(alpha = 0.16f),
-                                            border = BorderStroke(0.8.dp, EchoTokens.VinylAmber)
-                                        ) {
-                                            Text(
-                                                text = "☕ МЕСТО ГОРОДА",
-                                                color = EchoTokens.VinylAmber,
-                                                fontSize = 8.5.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                            )
-                                        }
                                         Text(
-                                            text = capsule.venueName.ifBlank { "Заведение" },
-                                            color = EchoTokens.TextPrimary,
-                                            fontSize = 13.5.sp,
+                                            text = "☕ МЕСТО ГОРОДА",
+                                            color = EchoTokens.VinylAmber,
+                                            fontSize = 8.5.sp,
                                             fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                         )
                                     }
+                                    Text(
+                                        text = capsule.venueName.ifBlank { "Заведение" },
+                                        color = EchoTokens.TextPrimary,
+                                        fontSize = 13.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 } else {
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -2625,7 +2641,7 @@ fun EchoBottomSheetHost(
     Dialog(onDismissRequest = onDismiss) {
         Surface(
             shape = RoundedCornerShape(24.dp),
-            color = EchoTokens.SurfaceElevated,
+            color = Color(0xFF0F172A),
             border = BorderStroke(1.2.dp, EchoTokens.SignalCyan.copy(alpha = 0.65f)),
             shadowElevation = 16.dp,
             modifier = Modifier
@@ -2892,8 +2908,8 @@ fun calculateVinylMapPositions(
         )
     }.toMutableList()
 
-    // 2. 8 проходов физической релаксации (Spring / Repulsion) для 100% исключения наложений
-    for (pass in 0 until 8) {
+    // 2. 14 проходов физической релаксации (Spring / Repulsion) для 100% исключения наложений
+    for (pass in 0 until 14) {
         var shifted = false
         for (i in polarList.indices) {
             for (j in (i + 1) until polarList.size) {
@@ -2912,8 +2928,8 @@ fun calculateVinylMapPositions(
 
                     // Ограничиваем дистанцию до центра (маяка пользователя)
                     val r1 = sqrt((newP1.x - center.x) * (newP1.x - center.x) + (newP1.y - center.y) * (newP1.y - center.y))
-                    if (r1 < maxR * 0.30f) {
-                        val scale = (maxR * 0.30f) / r1
+                    if (r1 < maxR * 0.32f) {
+                        val scale = (maxR * 0.32f) / r1
                         newP1 = Offset(center.x + (newP1.x - center.x) * scale, center.y + (newP1.y - center.y) * scale)
                     } else if (r1 > maxR * 0.90f) {
                         val scale = (maxR * 0.90f) / r1
@@ -2921,8 +2937,8 @@ fun calculateVinylMapPositions(
                     }
 
                     val r2 = sqrt((newP2.x - center.x) * (newP2.x - center.x) + (newP2.y - center.y) * (newP2.y - center.y))
-                    if (r2 < maxR * 0.30f) {
-                        val scale = (maxR * 0.30f) / r2
+                    if (r2 < maxR * 0.32f) {
+                        val scale = (maxR * 0.32f) / r2
                         newP2 = Offset(center.x + (newP2.x - center.x) * scale, center.y + (newP2.y - center.y) * scale)
                     } else if (r2 > maxR * 0.90f) {
                         val scale = (maxR * 0.90f) / r2
@@ -2957,6 +2973,59 @@ fun FloatingMusicIsland(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
+    if (vinyl.isCapsule) {
+        // Капсула / Тайник города (ромбический драгоценный артефакт)
+        val capsuleColor = if (vinyl.isVenue) EchoTokens.Gold else EchoTokens.VinylAmber
+        val capsuleSize = if (isSelected) 34.dp else 26.dp
+
+        Box(
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        (pos.x - 24.dp.toPx()).roundToInt(),
+                        (pos.y - 24.dp.toPx()).roundToInt()
+                    )
+                }
+                .size(48.dp)
+                .pointerInput(vinyl.id) {
+                    detectTapGestures(
+                        onTap = { onClick() },
+                        onLongPress = { onLongClick() }
+                    )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            if (isSelected) {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .graphicsLayer { rotationZ = 45f }
+                        .background(capsuleColor.copy(alpha = 0.28f * neonPulse))
+                )
+            }
+            Surface(
+                shape = RoundedCornerShape(6.dp),
+                color = Color(0xFF16120D),
+                border = BorderStroke(if (isSelected) 2.dp else 1.2.dp, if (isSelected) capsuleColor else capsuleColor.copy(alpha = 0.75f)),
+                modifier = Modifier
+                    .size(capsuleSize)
+                    .graphicsLayer { rotationZ = 45f }
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = if (vinyl.isVenue) "☕" else "◆",
+                        color = capsuleColor,
+                        fontSize = if (vinyl.isVenue) 10.sp else 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.graphicsLayer { rotationZ = -45f }
+                    )
+                }
+            }
+        }
+        return
+    }
+
     val accentColor = when {
         vinyl.compatibility >= 90 -> EchoTokens.Gold
         vinyl.compatibility >= 75 -> EchoTokens.VinylAmber
@@ -3080,7 +3149,7 @@ fun SelectedTrackCallout(
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = vinyl.title,
+                    text = if (vinyl.isCapsule) "💎 ${vinyl.title}" else "♫ ${vinyl.title}",
                     color = Color.White,
                     fontSize = 9.5.sp,
                     fontWeight = FontWeight.Bold,
@@ -3089,11 +3158,13 @@ fun SelectedTrackCallout(
                 )
                 Text(text = "·", color = accentColor, fontSize = 9.sp)
                 Text(
-                    text = "${vinyl.compatibility}%",
+                    text = if (vinyl.isCapsule) (if (vinyl.venueName.isNotBlank()) vinyl.venueName else "Тайник") else "${vinyl.compatibility}%",
                     color = accentColor,
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
-                    fontFamily = FontFamily.Monospace
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -3136,7 +3207,7 @@ fun VinylCityMapCanvas(
         val maxR = minOf(widthPx, heightPx) * 0.44f
 
         val density = LocalDensity.current
-        val minDistancePx = remember(density) { with(density) { 54.dp.toPx() } }
+        val minDistancePx = remember(density) { with(density) { 76.dp.toPx() } }
         val displayVinyls = remember(allVinyls) { allVinyls.filter { !it.isSelf } }
         val positions = remember(displayVinyls, center, maxR, minDistancePx) {
             calculateVinylMapPositions(displayVinyls, center, maxR, minDistancePx)
@@ -3176,10 +3247,10 @@ fun VinylCityMapCanvas(
                         val p2 = positions[v2.id]!!
                         val dist = sqrt((p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y))
                         val isGenreMatch = v1.genre.isNotBlank() && v1.genre.equals(v2.genre, ignoreCase = true)
-                        val isHighRes = (v1.compatibility >= 70 && v2.compatibility >= 70)
+                        val isHighRes = (v1.compatibility >= 78 && v2.compatibility >= 78)
                         Triple(v2, dist, isGenreMatch || isHighRes)
                     }
-                    .filter { (_, dist, isMatch) -> isMatch && dist < maxR * 1.35f }
+                    .filter { (_, dist, isMatch) -> isMatch && dist < maxR * 0.55f }
                     .sortedBy { it.second }
                     .take(2)
 
@@ -3197,31 +3268,19 @@ fun VinylCityMapCanvas(
             edges
         }
 
-        // Интерактивный видовой экран с трансформациями масштаба и сдвига
+        // Интерактивный видовой экран с чистым одиночным обработчиком трансформаций масштаба и сдвига
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .pointerInput(Unit) {
                     detectTransformGestures(panZoomLock = false) { _, pan, gestureZoom, _ ->
-                        zoom = (zoom * gestureZoom).coerceIn(0.65f, 3.5f)
-                        val maxPan = 450f * zoom
+                        zoom = (zoom * gestureZoom).coerceIn(0.70f, 3.2f)
+                        val maxPan = 400f * zoom
                         panOffset = Offset(
                             (panOffset.x + pan.x).coerceIn(-maxPan, maxPan),
                             (panOffset.y + pan.y).coerceIn(-maxPan, maxPan)
                         )
                     }
-                }
-                .pointerInput(Unit) {
-                    detectTapGestures(
-                        onDoubleTap = {
-                            zoom = 1f
-                            panOffset = Offset.Zero
-                            EchoSoundManager.playTick()
-                        },
-                        onTap = {
-                            onVinylSelected(VinylTrack("none", "", "", "", "", "", "", "", 0, 0f, 0f, 0L))
-                        }
-                    )
                 }
                 .graphicsLayer {
                     scaleX = animatedZoom
@@ -3231,34 +3290,7 @@ fun VinylCityMapCanvas(
                 }
         ) {
             Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(allVinyls, selectedVinyl, lagrangePoint) {
-                        detectTapGestures(
-                            onTap = { tapOffset ->
-                                if (lagrangePoint != null && lagrangePoint.active) {
-                                    val radL = Math.toRadians(lagrangePoint.angleDegrees.toDouble())
-                                    val rL = maxR * lagrangePoint.distanceRatio.coerceIn(0.24f, 0.92f)
-                                    val lx = center.x + (rL * cos(radL)).toFloat()
-                                    val ly = center.y + (rL * sin(radL)).toFloat()
-                                    val distL = sqrt((tapOffset.x - lx) * (tapOffset.x - lx) + (tapOffset.y - ly) * (tapOffset.y - ly))
-                                    if (distL < 38.dp.toPx()) {
-                                        onLagrangeClicked()
-                                        return@detectTapGestures
-                                    }
-                                }
-
-                                val distCenter = sqrt(
-                                    (tapOffset.x - center.x) * (tapOffset.x - center.x) +
-                                    (tapOffset.y - center.y) * (tapOffset.y - center.y)
-                                )
-                                if (distCenter < 36.dp.toPx()) {
-                                    onCenterUserClicked()
-                                    return@detectTapGestures
-                                }
-                            }
-                        )
-                    }
+                modifier = Modifier.fillMaxSize()
             ) {
             // 0. Мягкие рассеянные фоновые свечения (Ambient Mesh)
             drawCircle(
@@ -3582,6 +3614,50 @@ fun VinylCityMapCanvas(
                 style = Stroke(width = 1.6.dp.toPx())
             )
             drawCircle(color = EchoTokens.SignalCyan, radius = 4.dp.toPx(), center = center)
+        }
+
+        // Интерактивная зона маяка пользователя (центр)
+        Box(
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        (center.x - 26.dp.toPx()).roundToInt(),
+                        (center.y - 26.dp.toPx()).roundToInt()
+                    )
+                }
+                .size(52.dp)
+                .clip(CircleShape)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    onCenterUserClicked()
+                }
+        )
+
+        // Интерактивная зона точки Лагранжа
+        if (lagrangePoint != null && lagrangePoint.active) {
+            val radL = Math.toRadians(lagrangePoint.angleDegrees.toDouble())
+            val rL = maxR * lagrangePoint.distanceRatio.coerceIn(0.24f, 0.92f)
+            val lx = center.x + (rL * cos(radL)).toFloat()
+            val ly = center.y + (rL * sin(radL)).toFloat()
+            Box(
+                modifier = Modifier
+                    .offset {
+                        IntOffset(
+                            (lx - 24.dp.toPx()).roundToInt(),
+                            (ly - 24.dp.toPx()).roundToInt()
+                        )
+                    }
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        onLagrangeClicked()
+                    }
+            )
         }
 
         // 9. СВЕТЯЩИЕСЯ ВИНИЛОВЫЕ ОРБЫ НАД КАРТОЙ (Чистый Slow Tech, без нагромождения стикеров!)

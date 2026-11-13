@@ -247,6 +247,19 @@ object EchoStateRepository {
         var cleanArtist = rawArtist.trim()
         var cleanTitle = rawTitle.trim()
 
+        // Проверка на веб-мусор и расширения браузера
+        val lowerT = cleanTitle.lowercase()
+        val lowerA = cleanArtist.lowercase()
+        if (lowerT.contains("chrome-extension") || lowerA.contains("chrome-extension") ||
+            lowerT.contains("moz-extension") || lowerA.contains("moz-extension") ||
+            lowerT.startsWith("http://") || lowerT.startsWith("https://") ||
+            lowerA.startsWith("http://") || lowerA.startsWith("https://") ||
+            lowerT.contains("about:blank") || lowerT.contains("blob:") ||
+            lowerT.endsWith(".html") || lowerT.contains("devtools")
+        ) {
+            return Pair("Ожидание музыки...", "Ожидание звука...")
+        }
+
         // 0. Если в качестве артиста передано название плеера / сервиса
         val playerNames = setOf(
             "яндекс музыка", "yandex music", "vk музыка", "vk music", "вконтакте",
@@ -311,6 +324,10 @@ object EchoStateRepository {
 
     fun updateDetectedMusic(artist: String, title: String, packageName: String, isPlaying: Boolean = true) {
         val (cleanArtist, cleanTitle) = sanitizeMusicInfo(artist, title)
+        if (cleanTitle.startsWith("Ожидание") || cleanArtist.startsWith("Ожидание")) {
+            Log.d("EchoMedia", "Пропуск технического или пустого аудиосигнала ($title)")
+            return
+        }
 
         val readableSource = when {
             packageName.contains("yandex", ignoreCase = true) -> "Яндекс Музыка"

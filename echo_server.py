@@ -353,10 +353,18 @@ def infer_track_acoustics(artist: str, title: str, mood_label: str = "") -> dict
             genre = "Hip-Hop"
             bpm = 92
             camelot_key = "7A"
-        elif raw_g:
-            genre = meta["genre"]
-        else:
-            genre = "Indie"
+    # Deterministic acoustic fingerprint derived from artist + title
+    fingerprint = abs(hash(f"{artist.lower().strip()}::{title.lower().strip()}"))
+    keys_pool = ["8A", "7A", "9A", "8B", "11A", "4A", "2A", "5A", "10A", "1A", "12B", "3B"]
+    camelot_key = keys_pool[fingerprint % len(keys_pool)]
+    bpm = 75 + ((fingerprint // 7) % 65)
+    valence = 0.20 + (((fingerprint // 13) % 70) / 100.0)
+    energy = 0.25 + (((fingerprint // 17) % 65) / 100.0)
+
+    if meta.get("genre"):
+        genre = meta["genre"]
+    else:
+        genre = "Indie"
 
     return {
         "bpm": bpm,
@@ -370,20 +378,14 @@ def calculate_full_resonance(track_a: dict, track_b: dict) -> tuple[int, str]:
     """Итоговый расчет резонанса по формуле ChatGPT: R_AB = 100 * [ B_AB + lambda*(1-B_AB)*S_AB ]."""
     k_ab = calculate_camelot_harmonic(track_a.get("camelotKey", "8A"), track_b.get("camelotKey", "8A"))
     t_ab = calculate_tempo_harmonic(float(track_a.get("bpm", 120)), float(track_b.get("bpm", 120)))
-    w_ab = 0.84
-    m_ab = calculate_mood_vector(
-        float(track_a.get("valence", 0.4)), float(track_a.get("energy", 0.5)),
-        float(track_b.get("valence", 0.4)), float(track_b.get("energy", 0.5))
-    )
-    e_ab = 0.86
-
-    b_ab = (0.15 * k_ab) + (0.10 * t_ab) + (0.25 * w_ab) + (0.15 * m_ab) + (0.35 * e_ab)
+    g_match = 1.0 if track_a.get("genre", "").lower() == track_b.get("genre", "").lower() else 0.45
+    b_ab = (0.35 * k_ab) + (0.25 * t_ab) + (0.25 * m_ab) + (0.15 * g_match)
 
     s_ab, bridge_desc = calculate_serendipity_engine(
         track_a.get("genre", "indie"), track_b.get("genre", "indie"), b_ab
     )
 
-    lambda_factor = 0.25
+    lambda_factor = 0.20
     r_ab = 100.0 * (b_ab + lambda_factor * (1.0 - b_ab) * s_ab)
     final_compat = int(min(99, max(35, round(r_ab))))
 
@@ -1435,6 +1437,13 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
             title = str(data.get("title") or "Без названия").strip()
             source_name = str(data.get("sourceName") or "Android ЭХО")
             zone_name = str(data.get("zoneName") or "Вечерняя улица")
+
+            lower_title = title.lower()
+            lower_artist = artist.lower()
+            if any(bad in lower_title or bad in lower_artist for bad in ["chrome-extension", "moz-extension", "http://", "https://", ".html", "devtools", "about:blank"]):
+                logger.info("Filtered garbage signal from %s: %s — %s", dev_id, artist, title)
+                self.send_json(200, {"status": "ignored", "reason": "non_music_garbage"})
+                return
 
             cover_b64 = data.get("coverBase64")
             if cover_b64:

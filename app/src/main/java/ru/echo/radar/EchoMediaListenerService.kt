@@ -88,6 +88,17 @@ class EchoMediaListenerService : NotificationListenerService() {
         processNotification(sbn)
     }
 
+    private fun isGarbageMedia(title: String, artist: String): Boolean {
+        val t = title.lowercase()
+        val a = artist.lowercase()
+        return t.contains("chrome-extension://") || a.contains("chrome-extension://") ||
+               t.contains("moz-extension://") || a.contains("moz-extension://") ||
+               t.startsWith("http://") || t.startsWith("https://") ||
+               a.startsWith("http://") || a.startsWith("https://") ||
+               t.contains(".html") || t.contains("devtools") ||
+               t.contains("about:blank") || t.contains("blob:")
+    }
+
     private fun processNotification(sbn: StatusBarNotification) {
         val extras = sbn.notification?.extras ?: return
         val pkg = sbn.packageName.lowercase()
@@ -110,7 +121,7 @@ class EchoMediaListenerService : NotificationListenerService() {
                 ?: extras.getCharSequence(Notification.EXTRA_INFO_TEXT)?.toString()?.trim()
                 ?: ""
 
-            if (title.isNotBlank()) {
+            if (title.isNotBlank() && !isGarbageMedia(title, artist)) {
                 Log.d(tag, "Медиа-уведомление от $pkg: $artist — $title")
                 EchoStateRepository.updateDetectedMusic(
                     artist = artist,
@@ -168,7 +179,7 @@ class EchoMediaListenerService : NotificationListenerService() {
                 ?: ""
             val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE) ?: ""
 
-            if (title.isNotBlank()) {
+            if (title.isNotBlank() && !isGarbageMedia(title, artist)) {
                 Log.d(tag, "MediaSession обновлен (${controller.packageName}): $artist — $title [playing=$isPlaying]")
                 EchoStateRepository.updateDetectedMusic(
                     artist = artist,

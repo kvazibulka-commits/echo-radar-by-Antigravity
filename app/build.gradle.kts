@@ -12,8 +12,8 @@ android {
         applicationId = "ru.echo.radar"
         minSdk = 26
         targetSdk = 34
-        versionCode = 14
-        versionName = "0.3.9-v14-constellations"
+        versionCode = 15
+        versionName = "0.3.10-v15-video-fixes"
 
         vectorDrawables {
             useSupportLibrary = true
