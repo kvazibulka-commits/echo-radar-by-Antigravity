@@ -59,6 +59,8 @@ import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.net.URLEncoder
 import kotlin.math.PI
 import kotlin.math.cos
@@ -3112,27 +3114,6 @@ fun SelectedTrackCallout(
                     fontSize = 9.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace
-                )
-            }
-        }
-    }
-}
-            ) {
-                Text(
-                    text = vinyl.title,
-                    color = Color.White,
-                    fontSize = 9.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(text = "·", color = accentColor, fontSize = 9.sp)
-                Text(
-                    text = vinyl.artist,
-                    color = Color(0xFF94A3B8),
-                    fontSize = 8.5.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
