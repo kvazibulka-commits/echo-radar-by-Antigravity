@@ -322,6 +322,11 @@ object AlbumArtResolver {
         return getMediaInfo(artist, title).coverUrl
     }
 
+    fun getCachedCover(artist: String, title: String): String? {
+        val key = "$artist::$title".lowercase().trim()
+        return cache[key]?.coverUrl
+    }
+
     /**
      * Batch-prefetch cover URLs for a list of tracks (used to preload
      * mini covers for radar map pins). Runs all lookups on IO dispatcher.

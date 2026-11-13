@@ -1733,6 +1733,11 @@ def start_windows_media_listener():
                 if not artist and not title:
                     return
 
+                lower_title = title.lower()
+                lower_artist = artist.lower()
+                if any(bad in lower_title or bad in lower_artist for bad in ["chrome-extension", "http://", "https://", ".html", "extension://", "devtools"]):
+                    return
+
                 curr = (artist, title)
                 now = time.time()
 
