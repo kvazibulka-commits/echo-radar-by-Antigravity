@@ -66,8 +66,8 @@ import kotlin.math.sqrt
 // DESIGN TOKENS
 // =============================================================
 object EchoTokens {
-    val Background = Color(0xFF07090E)
-    val Surface = Color(0xFF0D121B)
+    val Background = Color(0xFF04060A)
+    val Surface = Color(0xFF0C1017)
     val SurfaceElevated = Color(0xFF151E2A)
     val SignalCyan = Color(0xFF00F0FF)
     val VinylAmber = Color(0xFFFFB800)
@@ -3119,68 +3119,139 @@ fun VinylCityMapCanvas(
             val maxR = minOf(size.width, size.height) * 0.44f
             val positions = calculateVinylMapPositions(allVinyls, center, maxR, 28.dp.toPx())
 
-            // 1. Тонкая ненавязчивая водная нить реки (14dp)
+            // 0. Мягкие рассеянные фоновые свечения (Ambient Mesh)
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFF4F46E5).copy(alpha = 0.15f), Color.Transparent),
+                    center = Offset(0f, 0f),
+                    radius = size.width * 0.75f
+                ),
+                radius = size.width * 0.75f,
+                center = Offset(0f, 0f)
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFF06B6D4).copy(alpha = 0.12f), Color.Transparent),
+                    center = Offset(size.width, size.height * 0.45f),
+                    radius = size.width * 0.70f
+                ),
+                radius = size.width * 0.70f,
+                center = Offset(size.width, size.height * 0.45f)
+            )
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0xFFF59E0B).copy(alpha = 0.08f), Color.Transparent),
+                    center = Offset(size.width * 0.2f, size.height),
+                    radius = size.width * 0.65f
+                ),
+                radius = size.width * 0.65f,
+                center = Offset(size.width * 0.2f, size.height)
+            )
+
+            // 1. Светящееся неоновое русло Яузы (органика вместо прямых линий)
             val riverPath = Path().apply {
-                moveTo(-30f, size.height * 0.22f)
+                moveTo(-30f, size.height * 0.68f)
                 cubicTo(
-                    size.width * 0.35f, size.height * 0.14f,
-                    size.width * 0.65f, size.height * 0.42f,
-                    size.width + 40f, size.height * 0.36f
+                    size.width * 0.35f, size.height * 0.60f,
+                    size.width * 0.65f, size.height * 0.76f,
+                    size.width + 40f, size.height * 0.66f
+                )
+            }
+            // Мягкое неоновое свечение реки
+            drawPath(
+                path = riverPath,
+                brush = Brush.horizontalGradient(
+                    colors = listOf(
+                        Color(0xFF0284C7).copy(alpha = 0.18f),
+                        Color(0xFF0369A1).copy(alpha = 0.35f),
+                        Color(0xFF00F0FF).copy(alpha = 0.15f)
+                    )
+                ),
+                style = Stroke(width = 24.dp.toPx(), cap = StrokeCap.Round)
+            )
+            // Тонкая водная нить реки
+            drawPath(
+                path = riverPath,
+                color = Color(0xFF38BDF8).copy(alpha = 0.40f),
+                style = Stroke(width = 1.6.dp.toPx(), cap = StrokeCap.Round)
+            )
+
+            // 2. Органические мягкие траектории городских переулков (не резкие прямые, а спокойные контуры)
+            val street1 = Path().apply {
+                moveTo(size.width * 0.18f, 0f)
+                cubicTo(size.width * 0.28f, size.height * 0.35f, size.width * 0.36f, size.height * 0.65f, size.width * 0.46f, size.height)
+            }
+            drawPath(path = street1, color = Color.White.copy(alpha = 0.035f), style = Stroke(width = 1.8.dp.toPx(), cap = StrokeCap.Round))
+
+            val street2 = Path().apply {
+                moveTo(size.width * 0.82f, 0f)
+                cubicTo(size.width * 0.72f, size.height * 0.35f, size.width * 0.62f, size.height * 0.65f, size.width * 0.56f, size.height)
+            }
+            drawPath(path = street2, color = Color.White.copy(alpha = 0.03f), style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round))
+
+            // 3. Дышащие органические изолинии звука (Топография звука v12 — без концентрических кругов радара!)
+            val topoDrift = sin(laserPhotonProgress * 2f * Math.PI.toFloat()) * 5.dp.toPx()
+
+            val topoWave1 = Path().apply {
+                moveTo(-20f, size.height * 0.42f + topoDrift)
+                cubicTo(
+                    size.width * 0.25f, size.height * 0.34f + topoDrift,
+                    size.width * 0.60f, size.height * 0.48f + topoDrift,
+                    size.width + 30f, size.height * 0.38f + topoDrift
                 )
             }
             drawPath(
-                path = riverPath,
-                color = Color(0xFF0B1B2B).copy(alpha = 0.35f),
-                style = Stroke(width = 14.dp.toPx(), cap = StrokeCap.Round)
+                path = topoWave1,
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color.Transparent, Color(0xFF38BDF8).copy(alpha = 0.22f), Color.Transparent)
+                ),
+                style = Stroke(width = 1.4.dp.toPx(), cap = StrokeCap.Round)
             )
 
-            // Мост через реку
-            val bridge1 = Offset(size.width * 0.38f, size.height * 0.18f)
-            drawLine(
-                color = Color(0xFF1E2838),
-                start = Offset(bridge1.x - 10.dp.toPx(), bridge1.y - 12.dp.toPx()),
-                end = Offset(bridge1.x + 10.dp.toPx(), bridge1.y + 12.dp.toPx()),
-                strokeWidth = 2.dp.toPx()
+            val topoWave2 = Path().apply {
+                moveTo(-20f, size.height * 0.46f - topoDrift * 0.8f)
+                cubicTo(
+                    size.width * 0.28f, size.height * 0.38f - topoDrift * 0.8f,
+                    size.width * 0.65f, size.height * 0.52f - topoDrift * 0.8f,
+                    size.width + 30f, size.height * 0.42f - topoDrift * 0.8f
+                )
+            }
+            drawPath(
+                path = topoWave2,
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color.Transparent, Color(0xFF38BDF8).copy(alpha = 0.14f), Color.Transparent)
+                ),
+                style = Stroke(width = 1.0.dp.toPx(), cap = StrokeCap.Round, pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 8f), 0f))
             )
 
-            // Радиальная сетка
-            for (ang in listOf(30.0, 75.0, 140.0, 210.0, 260.0, 315.0)) {
-                val rRad = Math.toRadians(ang)
-                val ex = center.x + (maxR * 1.15f * cos(rRad)).toFloat()
-                val ey = center.y + (maxR * 1.15f * sin(rRad)).toFloat()
-                drawLine(
-                    color = Color(0xFF141A28).copy(alpha = 0.6f),
-                    start = center,
-                    end = Offset(ex, ey),
-                    strokeWidth = 1.dp.toPx(),
-                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 10f), 0f)
+            val topoWave3 = Path().apply {
+                moveTo(-20f, size.height * 0.36f + topoDrift * 0.6f)
+                cubicTo(
+                    size.width * 0.22f, size.height * 0.28f + topoDrift * 0.6f,
+                    size.width * 0.55f, size.height * 0.40f + topoDrift * 0.6f,
+                    size.width + 30f, size.height * 0.32f + topoDrift * 0.6f
                 )
             }
+            drawPath(
+                path = topoWave3,
+                brush = Brush.horizontalGradient(
+                    colors = listOf(Color.Transparent, Color(0xFFF59E0B).copy(alpha = 0.16f), Color.Transparent)
+                ),
+                style = Stroke(width = 1.2.dp.toPx(), cap = StrokeCap.Round)
+            )
 
-            // 2. Кольца сонара
-            val ringCount = 4
-            for (i in 1..ringCount) {
-                val r = maxR * (i.toFloat() / ringCount)
-                drawCircle(
-                    color = Color(0xFF00F0FF).copy(alpha = 0.07f),
-                    radius = r,
-                    center = center,
-                    style = Stroke(width = 1.dp.toPx())
-                )
-            }
-
-            // 3. Сканирующий луч сонара с плавным градиентным шлейфом
+            // Мягкий рассеянный луч присутствия (не резкая полоса, а едва заметная нежная стрела)
             val sweepRad = Math.toRadians((laserPhotonProgress * 360f).toDouble())
             val sweepEnd = Offset(center.x + (maxR * cos(sweepRad)).toFloat(), center.y + (maxR * sin(sweepRad)).toFloat())
             drawLine(
                 brush = Brush.linearGradient(
-                    colors = listOf(Color(0xFF00F0FF).copy(alpha = 0.6f), Color.Transparent),
+                    colors = listOf(Color(0xFF00F0FF).copy(alpha = 0.25f), Color.Transparent),
                     start = center,
                     end = sweepEnd
                 ),
                 start = center,
                 end = sweepEnd,
-                strokeWidth = 1.5.dp.toPx()
+                strokeWidth = 1.2.dp.toPx()
             )
 
             // 4. Тепловые импульсы дыхания
@@ -3342,20 +3413,28 @@ fun VinylCityMapCanvas(
                 }
             }
 
-            // 8. Центр: Маяк слушателя с расходящейся водной волной
-            val centerPhase = (laserPhotonProgress * 1.1f) % 1f
-            val centerRippleRadius = 14.dp.toPx() + (26.dp.toPx() * centerPhase)
-            val centerRippleAlpha = (1f - centerPhase) * 0.18f
+            // 8. Центр: Органический световой маяк слушателя (без жестких кругов-мишеней)
             drawCircle(
-                color = EchoTokens.SignalCyan.copy(alpha = centerRippleAlpha),
-                radius = centerRippleRadius,
-                center = center,
-                style = Stroke(width = 0.9.dp.toPx())
+                brush = Brush.radialGradient(
+                    colors = listOf(EchoTokens.SignalCyan.copy(alpha = 0.20f * neonPulse), Color.Transparent),
+                    center = center,
+                    radius = 32.dp.toPx() * neonPulse
+                ),
+                radius = 32.dp.toPx() * neonPulse,
+                center = center
             )
-
-            drawCircle(color = Color(0xFF0E1420), radius = 14.dp.toPx(), center = center)
-            drawCircle(color = EchoTokens.SignalCyan, radius = 14.dp.toPx(), center = center, style = Stroke(width = 1.8.dp.toPx()))
-            drawCircle(color = EchoTokens.SignalCyan, radius = 5.dp.toPx(), center = center)
+            drawCircle(color = Color(0xFF04060A), radius = 12.dp.toPx(), center = center)
+            drawCircle(
+                brush = Brush.linearGradient(
+                    colors = listOf(Color(0xFF0284C7), EchoTokens.SignalCyan),
+                    start = Offset(center.x - 12.dp.toPx(), center.y - 12.dp.toPx()),
+                    end = Offset(center.x + 12.dp.toPx(), center.y + 12.dp.toPx())
+                ),
+                radius = 12.dp.toPx(),
+                center = center,
+                style = Stroke(width = 1.6.dp.toPx())
+            )
+            drawCircle(color = EchoTokens.SignalCyan, radius = 4.dp.toPx(), center = center)
         }
     }
 }
