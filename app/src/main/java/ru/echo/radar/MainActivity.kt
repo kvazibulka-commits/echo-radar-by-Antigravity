@@ -3627,10 +3627,7 @@ fun VinylCityMapCanvas(
                 }
                 .size(52.dp)
                 .clip(CircleShape)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
+                .clickable {
                     onCenterUserClicked()
                 }
         )
@@ -3651,10 +3648,7 @@ fun VinylCityMapCanvas(
                     }
                     .size(48.dp)
                     .clip(CircleShape)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {
+                    .clickable {
                         onLagrangeClicked()
                     }
             )
