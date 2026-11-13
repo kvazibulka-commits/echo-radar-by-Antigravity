@@ -12,8 +12,8 @@ android {
         applicationId = "ru.echo.radar"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "0.3.3-v11"
+        versionCode = 9
+        versionName = "0.3.4-v11"
 
         vectorDrawables {
             useSupportLibrary = true

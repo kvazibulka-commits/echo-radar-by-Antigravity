@@ -1064,9 +1064,15 @@ fun EtherScreen(
                             .background(if (isPresenceActive) EchoTokens.SignalCyan else Color(0xFF64748B))
                     )
                     Text(
-                        text = if (nearbySignalsCount > 0) "$nearbySignalsCount сигналов поблизости" else "Эфир спокоен",
+                        text = if (nearbySignalsCount > 0) "$nearbySignalsCount сигналов" else "Эфир спокоен",
                         color = EchoTokens.TextSecondary,
                         fontSize = 11.sp
+                    )
+                    Text(
+                        text = "• % = созвучие вкусов",
+                        color = EchoTokens.SignalCyan.copy(alpha = 0.65f),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace
                     )
                 }
             }
@@ -1643,6 +1649,22 @@ fun DeckScreen(
                     fontFamily = FontFamily.Monospace,
                     letterSpacing = 0.8.sp
                 )
+                if (!activeTrack.isSelf) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = EchoTokens.Gold.copy(alpha = 0.15f),
+                        border = BorderStroke(0.8.dp, EchoTokens.Gold.copy(alpha = 0.45f))
+                    ) {
+                        Text(
+                            text = "${activeTrack.compatibility}% СОЗВУЧИЕ",
+                            color = EchoTokens.Gold,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                }
                 if (isNeedleSynced) {
                     Text(
                         text = "• 🪡 В унисоне",
@@ -1690,7 +1712,7 @@ fun DeckScreen(
                 }
             }
 
-            // SECONDARY ACTION (Cyan outline #38BDF8): «Послать сигнал»
+            // SECONDARY ACTION (Cyan outline #38BDF8): «Импульс в эфир»
             Surface(
                 shape = RoundedCornerShape(14.dp),
                 color = EchoTokens.SignalCyan.copy(alpha = 0.10f),
@@ -1705,10 +1727,10 @@ fun DeckScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    Text(text = "🌊", fontSize = 14.sp)
+                    Text(text = "📡", fontSize = 14.sp)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Послать сигнал",
+                        text = "Импульс в эфир",
                         color = EchoTokens.SignalCyan,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
