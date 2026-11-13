@@ -72,6 +72,7 @@ object EchoTokens {
     val SignalCyan = Color(0xFF00F0FF)
     val VinylAmber = Color(0xFFFFB800)
     val Gold = Color(0xFFFFD700)
+    val AcousticGold = Color(0xFFFFD700)
     val TextPrimary = Color(0xFFF2F5F7)
     val TextSecondary = Color(0xFF85909E)
     val Divider = Color(0xFF26313E)
