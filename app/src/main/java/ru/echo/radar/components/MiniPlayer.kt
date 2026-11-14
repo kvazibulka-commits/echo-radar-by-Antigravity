@@ -4,12 +4,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -19,6 +16,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import ru.echo.radar.state.AppSessionState
 import ru.echo.radar.theme.EchoShapes
 import ru.echo.radar.theme.EchoTokens
@@ -49,11 +47,7 @@ fun MiniPlayer(
             .clip(EchoShapes.Medium)
             .background(EchoTokens.SurfaceElevated)
             .border(0.8.dp, EchoTokens.BorderSubtle, EchoShapes.Medium)
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = ripple(color = EchoTokens.SignalCyan),
-                onClick = onNavigateToDeck
-            )
+            .clickable(onClick = onNavigateToDeck)
             .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -132,11 +126,7 @@ fun MiniPlayer(
                 .clip(EchoShapes.Pill)
                 .background(if (state.isPlaying) EchoTokens.SignalCyanDim else EchoTokens.Surface)
                 .border(0.8.dp, if (state.isPlaying) EchoTokens.SignalCyan else EchoTokens.Divider, EchoShapes.Pill)
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = ripple(bounded = false, radius = 20.dp, color = EchoTokens.SignalCyan),
-                    onClick = onTogglePlayPause
-                ),
+                .clickable(onClick = onTogglePlayPause),
             contentAlignment = Alignment.Center
         ) {
             Text(

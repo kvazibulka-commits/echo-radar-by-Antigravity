@@ -3,13 +3,11 @@ package ru.echo.radar.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -88,11 +86,7 @@ fun EchoesScreen(
                         .clip(EchoShapes.Pill)
                         .background(bg)
                         .border(0.8.dp, borderCol, EchoShapes.Pill)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = ripple(color = EchoTokens.SignalCyan),
-                            onClick = { selectedFilter = filter }
-                        )
+                        .clickable(onClick = { selectedFilter = filter })
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Text(
