@@ -6,7 +6,7 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.VIBRATE" />
 
-    <!-- BLE Permissions for Android 12+ (p2p mesh) -->
+    <!-- BLE Mesh Permissions (Android 12+) -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
@@ -17,7 +17,9 @@
 
     <application
         android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
         android:label="ЭХО"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
@@ -32,9 +34,10 @@
             </intent-filter>
         </activity>
 
+        <!-- Media Listener Service: 0 руб API capture -->
         <service
-            android:name=".EchoMediaListenerService"
-            android:label="ЭХО — Музыкальное присутствие"
+            android:name=".service.EchoMediaListenerService"
+            android:label="ЭХО — Захват звукового присутствия"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
             android:exported="true">
             <intent-filter>

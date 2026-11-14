@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "EchoMusicRadar"
+rootProject.name = "EchoIndustrial"
 include(":app")
