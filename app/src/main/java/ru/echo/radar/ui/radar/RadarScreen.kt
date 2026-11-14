@@ -1,5 +1,6 @@
 package ru.echo.radar.ui.radar
 
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -33,6 +34,11 @@ fun RadarScreen(
     venueBeacons: List<VenueBeacon>,
     selectedSignal: EchoSignal?,
     isEveningMode: Boolean,
+    isServerOnline: Boolean,
+    serverUrl: String,
+    hasNotificationAccess: Boolean,
+    onRequestNotificationAccess: () -> Unit,
+    onOpenServerSettings: () -> Unit,
     onToggleEveningMode: () -> Unit,
     onSignalSelect: (EchoSignal) -> Unit,
     onBeaconSelect: (VenueBeacon) -> Unit,
@@ -46,10 +52,59 @@ fun RadarScreen(
             .fillMaxSize()
             .background(colors.background)
             .padding(horizontal = 18.dp),
-        contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        contentPadding = PaddingValues(top = 8.dp, bottom = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // 1. App Header
+        // 1. Permission Warning Card (if notification capture is not enabled)
+        if (!hasNotificationAccess) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(colors.accent2.copy(alpha = 0.12f))
+                        .border(1.dp, colors.accent2.copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .clickable(onClick = onRequestNotificationAccess)
+                        .padding(10.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(text = "🔔", fontSize = 16.sp)
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Требуется доступ к уведомлениям",
+                                color = colors.ink,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                text = "Для захвата музыки из Яндекс Музыки, VK, Звука и Spotify без внешних API.",
+                                color = colors.sub,
+                                fontSize = 9.sp,
+                                lineHeight = 12.sp
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(colors.accent2)
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "Включить",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 9.5.sp
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. App Header
         item {
             Row(
                 modifier = Modifier.fillMaxWidth().height(44.dp),
@@ -76,11 +131,39 @@ fun RadarScreen(
                     )
                 }
 
-                // Air pill & mode toggle
+                // Air pill, Server status, & mode toggle
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
+                    // Server connection pill
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(999.dp))
+                            .border(1.dp, if (isServerOnline) colors.live.copy(alpha = 0.5f) else colors.line, RoundedCornerShape(999.dp))
+                            .clickable(onClick = onOpenServerSettings)
+                            .padding(horizontal = 7.dp, vertical = 3.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(5.dp)
+                                    .background(if (isServerOnline) colors.live else colors.gold, CircleShape)
+                            )
+                            Text(
+                                text = if (isServerOnline) "ОНЛАЙН" else "АВТОНОМНО",
+                                color = if (isServerOnline) colors.live else colors.sub,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 7.sp,
+                                letterSpacing = 0.5.sp
+                            )
+                        }
+                    }
+
                     AirPill(
                         text = "${signals.size} в эфире",
                         onClick = {}
@@ -89,7 +172,7 @@ fun RadarScreen(
                     // Sun / Moon icon button
                     Box(
                         modifier = Modifier
-                            .size(30.dp)
+                            .size(28.dp)
                             .clip(CircleShape)
                             .border(1.dp, colors.line, CircleShape)
                             .clickable(onClick = onToggleEveningMode),
@@ -97,7 +180,7 @@ fun RadarScreen(
                     ) {
                         Text(
                             text = if (isEveningMode) "🌙" else "☀️",
-                            fontSize = 13.sp
+                            fontSize = 12.sp
                         )
                     }
                 }
@@ -134,18 +217,18 @@ fun RadarScreen(
             }
         }
 
-        // 2. Editorial Intro Block (Concept A «Атлас»)
+        // 3. Editorial Intro Block
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                 Text(
                     text = "ПОКРОВКА · РАДИУС 500 М",
                     color = colors.faint,
                     fontFamily = FontFamily.Monospace,
-                    fontSize = 8.5.sp,
+                    fontSize = 8.sp,
                     letterSpacing = 1.2.sp
                 )
 
-                // Large Serif Headline: "День звучит тише и теплее"
+                // Large Serif Headline
                 val headlineText = buildAnnotatedString {
                     if (isEveningMode) {
                         append("Ночь звучит\n")
@@ -170,7 +253,7 @@ fun RadarScreen(
                     letterSpacing = (-0.5).sp
                 )
 
-                // Subtext with bold figures
+                // Subtext with bold numbers
                 val subText = buildAnnotatedString {
                     withStyle(SpanStyle(fontWeight = FontWeight.Bold, color = colors.ink)) {
                         append("${signals.size}")
@@ -188,12 +271,12 @@ fun RadarScreen(
                 Text(
                     text = subText,
                     color = colors.sub,
-                    fontSize = 10.sp
+                    fontSize = 9.5.sp
                 )
             }
         }
 
-        // 3. Atlas Topographic Radar (242x242 Frame)
+        // 4. Atlas Dynamic Topographic Radar (242x242 Frame)
         item {
             Box(
                 modifier = Modifier
@@ -236,7 +319,7 @@ fun RadarScreen(
             }
         }
 
-        // 4. Signal List Header
+        // 5. Signal List Header
         item {
             Row(
                 modifier = Modifier
@@ -263,18 +346,21 @@ fun RadarScreen(
             Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(colors.line))
         }
 
-        // 5. Signal Rows (matching .sig-row from design stand)
+        // 6. Signal Rows with tactile paper depth and generative art
         itemsIndexed(signals) { index, sig ->
-            Column(
+            val isSelected = sig.id == selectedSignal?.id
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (isSelected) colors.surface2.copy(alpha = 0.5f) else Color.Transparent)
                     .clickable { onSignalSelect(sig) }
-                    .padding(vertical = 8.dp)
+                    .padding(vertical = 8.dp, horizontal = 4.dp)
             ) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     // Index 01, 02...
                     Text(
@@ -285,6 +371,12 @@ fun RadarScreen(
                         modifier = Modifier.width(18.dp)
                     )
 
+                    // Small generative art box
+                    GenArtCover(
+                        hue = sig.hue,
+                        modifier = Modifier.size(28.dp)
+                    )
+
                     // Main Info: Persona, Track, Meta
                     Column(
                         modifier = Modifier.weight(1f),
@@ -293,22 +385,22 @@ fun RadarScreen(
                         Text(
                             text = sig.persona.ifEmpty { "Слушатель эфира" },
                             color = colors.sub,
-                            fontSize = 8.sp,
-                            letterSpacing = 0.6.sp,
+                            fontSize = 7.5.sp,
+                            letterSpacing = 0.5.sp,
                             maxLines = 1
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
                                 text = "${sig.artist} — ",
                                 color = colors.ink,
-                                fontSize = 12.sp,
+                                fontSize = 11.5.sp,
                                 maxLines = 1
                             )
                             Text(
                                 text = sig.track,
                                 color = colors.ink,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
+                                fontSize = 11.5.sp,
                                 maxLines = 1
                             )
                         }
@@ -316,7 +408,7 @@ fun RadarScreen(
                             text = "${sig.genre} · ${sig.bpm} BPM · ${sig.camelotKey}",
                             color = colors.faint,
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 7.5.sp,
+                            fontSize = 7.sp,
                             letterSpacing = 0.2.sp,
                             maxLines = 1
                         )
@@ -328,7 +420,7 @@ fun RadarScreen(
                     ) {
                         Text(
                             text = "${sig.resonancePercent}",
-                            color = colors.ink,
+                            color = if (isSelected) colors.accent else colors.ink,
                             fontFamily = FontFamily.Serif,
                             fontWeight = FontWeight.Bold,
                             fontSize = 17.sp,
@@ -342,17 +434,15 @@ fun RadarScreen(
                         )
                     }
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(colors.line))
             }
+            Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(colors.line))
         }
 
-        // 6. Night Drop Card
+        // 7. Night Drop Card
         item {
             Spacer(modifier = Modifier.height(4.dp))
             NightDropCard(onListenFragment = onOpenNightDrop)
-            Spacer(modifier = Modifier.height(60.dp)) // Leave space for mini-player
+            Spacer(modifier = Modifier.height(60.dp))
         }
     }
 }

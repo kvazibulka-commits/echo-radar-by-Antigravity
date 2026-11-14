@@ -13,6 +13,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import ru.echo.radar.domain.model.EchoSignal
@@ -31,24 +32,24 @@ fun AtlasRadarCanvas(
 ) {
     val colors = LocalEchoColors.current
 
-    // 16s linear sweep rotation matching design stand
+    // Smooth continuous 12s linear sweep rotation (360 deg)
     val infiniteTransition = rememberInfiniteTransition(label = "atlas_sweep")
     val sweepAngle by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 16000, easing = LinearEasing),
+            animation = tween(durationMillis = 10000, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "sweep_angle"
     )
 
-    // 3s ping pulse for live dot
+    // Concentric sonar ping pulse expanding every 2.8 seconds
     val pingProgress by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 3000, easing = LinearEasing),
+            animation = tween(durationMillis = 2800, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "ping_pulse"
@@ -66,7 +67,7 @@ fun AtlasRadarCanvas(
 
                     // Check signal taps
                     val clickedSignal = signals.minByOrNull { s ->
-                        val rad = (s.angleDegrees) * (PI.toFloat() / 180f)
+                        val rad = s.angleDegrees * (PI.toFloat() / 180f)
                         val r = s.normalizedRadius * maxR
                         val bx = cx + r * cos(rad)
                         val by = cy + r * sin(rad)
@@ -74,11 +75,11 @@ fun AtlasRadarCanvas(
                     }
 
                     if (clickedSignal != null) {
-                        val rad = (clickedSignal.angleDegrees) * (PI.toFloat() / 180f)
+                        val rad = clickedSignal.angleDegrees * (PI.toFloat() / 180f)
                         val r = clickedSignal.normalizedRadius * maxR
                         val bx = cx + r * cos(rad)
                         val by = cy + r * sin(rad)
-                        if (hypot(tapOffset.x - bx, tapOffset.y - by) < 60f) {
+                        if (hypot(tapOffset.x - bx, tapOffset.y - by) < 70f) {
                             onSignalSelected(clickedSignal)
                             return@detectTapGestures
                         }
@@ -86,7 +87,7 @@ fun AtlasRadarCanvas(
 
                     // Check venue beacon taps
                     val clickedVenue = venueBeacons.minByOrNull { v ->
-                        val rad = (v.angleDegrees) * (PI.toFloat() / 180f)
+                        val rad = v.angleDegrees * (PI.toFloat() / 180f)
                         val r = v.normalizedRadius * maxR
                         val bx = cx + r * cos(rad)
                         val by = cy + r * sin(rad)
@@ -94,11 +95,11 @@ fun AtlasRadarCanvas(
                     }
 
                     if (clickedVenue != null) {
-                        val rad = (clickedVenue.angleDegrees) * (PI.toFloat() / 180f)
+                        val rad = clickedVenue.angleDegrees * (PI.toFloat() / 180f)
                         val r = clickedVenue.normalizedRadius * maxR
                         val bx = cx + r * cos(rad)
                         val by = cy + r * sin(rad)
-                        if (hypot(tapOffset.x - bx, tapOffset.y - by) < 60f) {
+                        if (hypot(tapOffset.x - bx, tapOffset.y - by) < 70f) {
                             onBeaconSelected(clickedVenue)
                         }
                     }
@@ -117,17 +118,24 @@ fun AtlasRadarCanvas(
         val r1 = 45f * unit
         val rCore = 10f * unit
 
+        // Subtle paper / metal background disk
+        drawCircle(
+            color = colors.surface.copy(alpha = 0.5f),
+            radius = r4,
+            center = Offset(cx, cy)
+        )
+
         // Ring 4 (accent color with 0.4 alpha)
         drawCircle(
-            color = colors.accent.copy(alpha = 0.4f),
+            color = colors.accent.copy(alpha = 0.45f),
             radius = r4,
             center = Offset(cx, cy),
-            style = Stroke(width = 1.dp.toPx())
+            style = Stroke(width = 1.2.dp.toPx())
         )
 
         // Ring 3 (lineStrong with 0.7 alpha)
         drawCircle(
-            color = colors.lineStrong.copy(alpha = 0.7f),
+            color = colors.lineStrong.copy(alpha = 0.75f),
             radius = r3,
             center = Offset(cx, cy),
             style = Stroke(width = 1.dp.toPx())
@@ -140,7 +148,7 @@ fun AtlasRadarCanvas(
             center = Offset(cx, cy),
             style = Stroke(
                 width = 1.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(2.dp.toPx(), 5.dp.toPx()), 0f)
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(3.dp.toPx(), 5.dp.toPx()), 0f)
             )
         )
 
@@ -152,15 +160,17 @@ fun AtlasRadarCanvas(
             style = Stroke(width = 1.dp.toPx())
         )
 
-        // Core Dot
+        // Expanding concentric sonar pulse wave
+        val waveRadius = r4 * pingProgress
         drawCircle(
-            color = colors.live,
-            radius = rCore,
-            center = Offset(cx, cy)
+            color = colors.accent.copy(alpha = (1f - pingProgress) * 0.35f),
+            radius = waveRadius,
+            center = Offset(cx, cy),
+            style = Stroke(width = 1.5.dp.toPx())
         )
 
         // Crosshairs: dashed lines (2dp, 6dp)
-        val crosshairEffect = PathEffect.dashPathEffect(floatArrayOf(2.dp.toPx(), 6.dp.toPx()), 0f)
+        val crosshairEffect = PathEffect.dashPathEffect(floatArrayOf(2.5.dp.toPx(), 6.dp.toPx()), 0f)
         drawLine(
             color = colors.line,
             start = Offset(cx, cy - r4),
@@ -177,7 +187,7 @@ fun AtlasRadarCanvas(
         )
 
         // Axis and diagonal ticks
-        val tickLen = 6f * unit
+        val tickLen = 7f * unit
         // North & South
         drawLine(colors.faint, Offset(cx, cy - r4), Offset(cx, cy - r4 + tickLen), strokeWidth = 1.dp.toPx())
         drawLine(colors.faint, Offset(cx, cy + r4 - tickLen), Offset(cx, cy + r4), strokeWidth = 1.dp.toPx())
@@ -185,24 +195,57 @@ fun AtlasRadarCanvas(
         drawLine(colors.faint, Offset(cx - r4, cy), Offset(cx - r4 + tickLen, cy), strokeWidth = 1.dp.toPx())
         drawLine(colors.faint, Offset(cx + r4 - tickLen, cy), Offset(cx + r4, cy), strokeWidth = 1.dp.toPx())
 
-        // Radar Sweep (Conic sector)
-        val sweepRad = sweepAngle * (PI.toFloat() / 180f)
-        val sweepColor = colors.accent.copy(alpha = if (colors.isEvening) 0.55f else 0.28f)
-        val sweepBrush = Brush.sweepGradient(
-            0.0f to Color.Transparent,
-            0.82f to Color.Transparent,
-            0.94f to sweepColor.copy(alpha = 0.08f),
-            1.0f to sweepColor,
-            center = Offset(cx, cy)
-        )
+        // ═══════════════════════════════════════════════════════
+        // ACTIVE ROTATING RADAR SWEEP (EXPLICIT ROTATION MATRIX)
+        // ═══════════════════════════════════════════════════════
+        rotate(degrees = sweepAngle, pivot = Offset(cx, cy)) {
+            // Luminous conic gradient trailing sector
+            val sweepColor = colors.accent.copy(alpha = if (colors.isEvening) 0.55f else 0.32f)
+            val sweepBrush = Brush.sweepGradient(
+                0.0f to Color.Transparent,
+                0.80f to Color.Transparent,
+                0.93f to sweepColor.copy(alpha = 0.08f),
+                1.0f to sweepColor,
+                center = Offset(cx, cy)
+            )
 
+            drawCircle(
+                brush = sweepBrush,
+                radius = r4,
+                center = Offset(cx, cy)
+            )
+
+            // Bright scanning ray line from center outwards
+            drawLine(
+                brush = Brush.horizontalGradient(
+                    colors = listOf(colors.live.copy(alpha = 0.2f), colors.live),
+                    startX = cx,
+                    endX = cx + r4
+                ),
+                start = Offset(cx, cy),
+                end = Offset(cx + r4, cy),
+                strokeWidth = 2.dp.toPx()
+            )
+        }
+
+        // Center User Core Dot (live pulse)
         drawCircle(
-            brush = sweepBrush,
-            radius = r4,
+            color = colors.live.copy(alpha = 0.3f),
+            radius = rCore + 4.dp.toPx(),
+            center = Offset(cx, cy)
+        )
+        drawCircle(
+            color = colors.live,
+            radius = rCore,
+            center = Offset(cx, cy)
+        )
+        drawCircle(
+            color = colors.background,
+            radius = rCore - 3.dp.toPx(),
             center = Offset(cx, cy)
         )
 
-        // Live dot ping expanding ring
+        // Live dot ping expanding ring (for first active signal)
         val liveSignal = signals.firstOrNull()
         if (liveSignal != null) {
             val a = liveSignal.angleDegrees * (PI.toFloat() / 180f)
@@ -211,10 +254,10 @@ fun AtlasRadarCanvas(
             val ly = cy + r * sin(a)
 
             drawCircle(
-                color = colors.live.copy(alpha = (1f - pingProgress) * 0.5f),
-                radius = (8.dp.toPx() + 18.dp.toPx() * pingProgress),
+                color = colors.live.copy(alpha = (1f - pingProgress) * 0.6f),
+                radius = (8.dp.toPx() + 20.dp.toPx() * pingProgress),
                 center = Offset(lx, ly),
-                style = Stroke(width = 1.dp.toPx())
+                style = Stroke(width = 1.2.dp.toPx())
             )
         }
 
@@ -227,13 +270,22 @@ fun AtlasRadarCanvas(
             val isMuted = i == 5
             val isSelected = sig.id == selectedSignalId
 
-            val baseRadius = if (isMuted) 3.dp.toPx() else (if (isSelected) 5.dp.toPx() else 4.dp.toPx())
+            val baseRadius = if (isMuted) 3.5.dp.toPx() else (if (isSelected) 6.dp.toPx() else 4.5.dp.toPx())
             val dotColor = if (isMuted) colors.live.copy(alpha = 0.45f) else colors.live
 
-            // White/background 2dp border
+            // Subtle glow aura if selected
+            if (isSelected) {
+                drawCircle(
+                    color = colors.live.copy(alpha = 0.25f),
+                    radius = baseRadius + 6.dp.toPx(),
+                    center = Offset(sx, sy)
+                )
+            }
+
+            // White/background 2.5dp border
             drawCircle(
                 color = colors.background,
-                radius = baseRadius + 2.dp.toPx(),
+                radius = baseRadius + 2.5.dp.toPx(),
                 center = Offset(sx, sy)
             )
             // Core
@@ -253,29 +305,42 @@ fun AtlasRadarCanvas(
                             (colors.sub.green * 255).toInt(),
                             (colors.sub.blue * 255).toInt()
                         )
-                        textSize = 8.dp.toPx()
+                        textSize = 8.5.dp.toPx()
                         typeface = android.graphics.Typeface.MONOSPACE
                         isAntiAlias = true
                     }
                     val bgPaint = Paint().apply {
                         color = android.graphics.Color.argb(
-                            215,
-                            (colors.background.red * 255).toInt(),
-                            (colors.background.green * 255).toInt(),
-                            (colors.background.blue * 255).toInt()
+                            230,
+                            (colors.surface.red * 255).toInt(),
+                            (colors.surface.green * 255).toInt(),
+                            (colors.surface.blue * 255).toInt()
                         )
+                    }
+                    val borderPaint = Paint().apply {
+                        color = android.graphics.Color.argb(
+                            180,
+                            (colors.line.red * 255).toInt(),
+                            (colors.line.green * 255).toInt(),
+                            (colors.line.blue * 255).toInt()
+                        )
+                        style = Paint.Style.STROKE
+                        strokeWidth = 1.dp.toPx()
+                        isAntiAlias = true
                     }
 
                     val textWidth = paint.measureText(labelText)
-                    val labelX = if (sx > cx) sx - textWidth - 12.dp.toPx() else sx + 10.dp.toPx()
+                    val labelX = if (sx > cx) sx - textWidth - 14.dp.toPx() else sx + 12.dp.toPx()
                     val labelY = sy - 4.dp.toPx()
 
-                    canvas.nativeCanvas.drawRoundRect(
-                        RectF(labelX - 4.dp.toPx(), labelY - 9.dp.toPx(), labelX + textWidth + 4.dp.toPx(), labelY + 3.dp.toPx()),
-                        3.dp.toPx(),
-                        3.dp.toPx(),
-                        bgPaint
+                    val rect = RectF(
+                        labelX - 5.dp.toPx(),
+                        labelY - 10.dp.toPx(),
+                        labelX + textWidth + 5.dp.toPx(),
+                        labelY + 4.dp.toPx()
                     )
+                    canvas.nativeCanvas.drawRoundRect(rect, 4.dp.toPx(), 4.dp.toPx(), bgPaint)
+                    canvas.nativeCanvas.drawRoundRect(rect, 4.dp.toPx(), 4.dp.toPx(), borderPaint)
                     canvas.nativeCanvas.drawText(labelText, labelX, labelY, paint)
                 }
             }
@@ -293,8 +358,8 @@ fun AtlasRadarCanvas(
                 canvas.translate(vx, vy)
                 canvas.rotate(45f)
 
-                // 2dp border in background color
-                val borderSide = 8.dp.toPx()
+                // 2.5dp border in background color
+                val borderSide = 9.dp.toPx()
                 drawRect(
                     color = colors.background,
                     topLeft = Offset(-borderSide / 2, -borderSide / 2),
@@ -302,7 +367,7 @@ fun AtlasRadarCanvas(
                 )
 
                 // Gold diamond fill
-                val side = 6.5.dp.toPx()
+                val side = 7.dp.toPx()
                 drawRect(
                     color = colors.gold,
                     topLeft = Offset(-side / 2, -side / 2),
@@ -322,29 +387,42 @@ fun AtlasRadarCanvas(
                             (colors.sub.green * 255).toInt(),
                             (colors.sub.blue * 255).toInt()
                         )
-                        textSize = 8.dp.toPx()
+                        textSize = 8.5.dp.toPx()
                         typeface = android.graphics.Typeface.MONOSPACE
                         isAntiAlias = true
                     }
                     val bgPaint = Paint().apply {
                         color = android.graphics.Color.argb(
-                            215,
-                            (colors.background.red * 255).toInt(),
-                            (colors.background.green * 255).toInt(),
-                            (colors.background.blue * 255).toInt()
+                            230,
+                            (colors.surface.red * 255).toInt(),
+                            (colors.surface.green * 255).toInt(),
+                            (colors.surface.blue * 255).toInt()
                         )
+                    }
+                    val borderPaint = Paint().apply {
+                        color = android.graphics.Color.argb(
+                            180,
+                            (colors.line.red * 255).toInt(),
+                            (colors.line.green * 255).toInt(),
+                            (colors.line.blue * 255).toInt()
+                        )
+                        style = Paint.Style.STROKE
+                        strokeWidth = 1.dp.toPx()
+                        isAntiAlias = true
                     }
 
                     val textWidth = paint.measureText(v.label)
-                    val labelX = if (vx > cx) vx - textWidth - 12.dp.toPx() else vx + 10.dp.toPx()
+                    val labelX = if (vx > cx) vx - textWidth - 14.dp.toPx() else vx + 12.dp.toPx()
                     val labelY = vy - 4.dp.toPx()
 
-                    canvas.nativeCanvas.drawRoundRect(
-                        RectF(labelX - 4.dp.toPx(), labelY - 9.dp.toPx(), labelX + textWidth + 4.dp.toPx(), labelY + 3.dp.toPx()),
-                        3.dp.toPx(),
-                        3.dp.toPx(),
-                        bgPaint
+                    val rect = RectF(
+                        labelX - 5.dp.toPx(),
+                        labelY - 10.dp.toPx(),
+                        labelX + textWidth + 5.dp.toPx(),
+                        labelY + 4.dp.toPx()
                     )
+                    canvas.nativeCanvas.drawRoundRect(rect, 4.dp.toPx(), 4.dp.toPx(), bgPaint)
+                    canvas.nativeCanvas.drawRoundRect(rect, 4.dp.toPx(), 4.dp.toPx(), borderPaint)
                     canvas.nativeCanvas.drawText(v.label, labelX, labelY, paint)
                 }
             }

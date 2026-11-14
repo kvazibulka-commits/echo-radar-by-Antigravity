@@ -86,9 +86,28 @@ def init_db():
             INSERT INTO venue_beacons (id, name, venue_type, current_track, current_artist, streaming_source, min_resonance, proof_code, discount_description, lat, lon, address)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [
-                ("venue-1", "Кофейня «Фонотека & Зерно»", "COFFEE", "Мы сегодня дома", "Хадн Дадн", "Звук", 75, "ЭХО-82", "Скидка 20% на спешлти фильтр-кофе", 55.7558, 37.6173, "Большая Никитская, 14"),
-                ("venue-2", "Винный бар & Джаз «Пластинка»", "BAR", "Blue in Green", "Miles Davis", "Яндекс Музыка", 75, "JAZZ-90", "Бокал авторского сидра при созвучии", 55.7580, 37.6120, "Малая Бронная, 22")
+                ("venue", "Кофейня «Соль»", "COFFEE", "Судно (Борис Рижий)", "Молчат Дома", "Яндекс Музыка", 75, "СУДНО", "Фильтр-кофе −20% за созвучие", 55.7610, 37.6415, "Большая Никитская, 14"),
+                ("book", "Дом книги на Сретенке", "BOOKSHOP", "Август", "Sirotkin", "Яндекс Музыка", 60, "АВГУСТ", "Закладка ручной работы внутри", 55.7630, 37.6380, "Сретенка, 8")
             ])
+
+        now = int(time.time())
+        cur.execute("SELECT COUNT(*) FROM signals")
+        if cur.fetchone()[0] == 0:
+            cur.executemany("""
+            INSERT INTO signals (device_token, artist, track, album, source, lat, lon, bpm, camelot, genre, is_playing, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, [
+                ("peer_s1", "Молчат Дома", "Судно (Борис Рижий)", "Этажи", "Яндекс Музыка", 55.7620, 37.6430, 128, "8A", "Пост-панк", 1, now + 86400 * 30),
+                ("peer_s2", "Sirotkin", "Август", "Эхолот", "Яндекс Музыка", 55.7605, 37.6390, 92, "11B", "Инди-фолк", 1, now + 86400 * 30),
+                ("peer_s3", "Burial", "Archangel", "Untrue", "Spotify", 55.7590, 37.6420, 138, "2A", "Future garage", 1, now + 86400 * 30),
+                ("peer_s4", "КИНО", "Звезда по имени Солнце", "Звезда по имени Солнце", "VK Музыка", 55.7635, 37.6410, 118, "9A", "Русский рок", 1, now + 86400 * 30),
+                ("peer_s5", "Beach House", "Space Song", "Depression Cherry", "Яндекс Музыка", 55.7580, 37.6370, 147, "5B", "Dream pop", 1, now + 86400 * 30),
+                ("peer_s6", "Nils Frahm", "Says", "Spaces", "Звук", 55.7640, 37.6440, 68, "4A", "Неоклассика", 1, now + 86400 * 30),
+                ("peer_s7", "Pompeya", "90", "Tropical", "Яндекс Музыка", 55.7600, 37.6450, 110, "7B", "Dream groove", 1, now + 86400 * 30)
+            ])
+
+        cur.execute("SELECT COUNT(*) FROM time_capsules")
+        if cur.fetchone()[0] == 0:
             cur.execute("""
             INSERT INTO time_capsules (id, artist, track, message, author_label, lat, lon, location_name, created_at, expires_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
