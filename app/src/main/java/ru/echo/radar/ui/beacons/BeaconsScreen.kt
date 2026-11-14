@@ -11,6 +11,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -18,8 +20,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import ru.echo.radar.domain.model.TimeCapsule
 import ru.echo.radar.domain.model.VenueBeacon
-import ru.echo.radar.ui.components.IndustrialBadge
-import ru.echo.radar.ui.components.IndustrialButton
 import ru.echo.radar.ui.theme.LocalEchoColors
 
 @Composable
@@ -47,37 +47,44 @@ fun BeaconsScreen(
         modifier = modifier
             .fillMaxSize()
             .background(colors.background)
-            .padding(16.dp)
+            .padding(horizontal = 18.dp, vertical = 12.dp)
     ) {
-        // 1. Header
+        // Head
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().height(32.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
-                Text(
-                    text = "ТАЙНИКИ",
-                    color = colors.textPrimary,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 22.sp
-                )
-                Text(
-                    text = "Звуковые маяки заведений и капсулы времени",
-                    color = colors.textSecondary,
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 11.sp
-                )
-            }
-            IndustrialBadge(
+            Text(
+                text = "ТАЙНИКИ · КАРТА",
+                color = colors.faint,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 8.5.sp,
+                letterSpacing = 1.sp
+            )
+            Text(
                 text = "${filteredVenues.size + filteredCapsules.size} АКТИВНО",
-                highlight = true
+                color = colors.faint,
+                fontFamily = FontFamily.Monospace,
+                fontSize = 7.5.sp,
+                letterSpacing = 0.5.sp
             )
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        // 2. Radius Chips Row
+        Text(
+            text = "Тайники города",
+            color = colors.ink,
+            fontFamily = FontFamily.Serif,
+            fontWeight = FontWeight.Normal,
+            fontSize = 26.sp,
+            letterSpacing = (-0.4).sp
+        )
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        // Radius row
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -88,217 +95,155 @@ fun BeaconsScreen(
             RadiusChip("до 1 км", selected = selectedRadius == 1000) { selectedRadius = 1000 }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // 3. Beacons & Capsules List
+        // List
         LazyColumn(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // Venue Beacons
+            // Venue Beacons (Proof-of-Music)
             items(filteredVenues) { venue ->
                 val isUnlocked = venue.isUnlocked(userResonancePercent)
-
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(colors.surface, RoundedCornerShape(8.dp))
-                        .border(
-                            width = 1.5.dp,
-                            color = if (isUnlocked) colors.venueGold else colors.border,
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        .padding(14.dp)
+                        .clickable { onShowBaristaCode(venue) }
+                        .padding(vertical = 10.dp)
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Diamond glyph
+                        Box(
+                            modifier = Modifier
+                                .size(11.dp)
+                                .rotate(45f)
+                                .background(colors.accent.copy(alpha = 0.12f))
+                                .border(1.dp, colors.accent)
+                        )
+
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "${venue.venueType.icon} ${venue.venueType.label.uppercase()}",
-                                color = colors.textSecondary,
+                                text = "ЗАВЕДЕНИЕ · PROOF-OF-MUSIC",
+                                color = colors.faint,
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 6.5.sp,
+                                letterSpacing = 0.8.sp
                             )
                             Text(
-                                text = "${venue.distanceMeters} м рядом",
+                                text = venue.name,
+                                color = colors.ink,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.5.sp,
+                                letterSpacing = (-0.2).sp
+                            )
+                            Text(
+                                text = "${venue.distanceMeters} м · порог ${venue.minResonancePercent}% · до 18:00",
+                                color = colors.sub,
+                                fontSize = 8.sp
+                            )
+                            Text(
+                                text = venue.discountDescription,
                                 color = colors.accent,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 8.5.sp
                             )
                         }
 
                         Text(
-                            text = venue.name,
-                            color = colors.textPrimary,
-                            fontWeight = FontWeight.Black,
-                            fontSize = 16.sp
+                            text = "${venue.minResonancePercent}%",
+                            color = colors.gold,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp
                         )
-
-                        // Music playing in venue
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(colors.surfaceElevated, RoundedCornerShape(4.dp))
-                                .border(1.dp, colors.border, RoundedCornerShape(4.dp))
-                                .padding(8.dp)
-                        ) {
-                            Text(
-                                text = "В зале: ${venue.currentArtist} — ${venue.currentTrack} (${venue.streamingSource})",
-                                color = colors.textSecondary,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp
-                            )
-                        }
-
-                        // Proof-of-music status box
-                        if (isUnlocked) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(colors.venueGold.copy(alpha = 0.12f), RoundedCornerShape(4.dp))
-                                    .border(1.dp, colors.venueGold, RoundedCornerShape(4.dp))
-                                    .padding(10.dp)
-                            ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    Text(
-                                        text = "🔓 АКУСТИЧЕСКИЙ ПАРОЛЬ ОТКРЫТ (Созвучие $userResonancePercent% ≥ ${venue.minResonancePercent}%)",
-                                        color = colors.venueGold,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 10.sp
-                                    )
-                                    Text(
-                                        text = venue.discountDescription,
-                                        color = colors.textPrimary,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
-
-                            IndustrialButton(
-                                text = "🎫 Показать экран бариста",
-                                onClick = { onShowBaristaCode(venue) },
-                                isPrimary = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(colors.surfaceElevated, RoundedCornerShape(4.dp))
-                                    .border(1.dp, colors.border, RoundedCornerShape(4.dp))
-                                    .padding(10.dp)
-                            ) {
-                                Text(
-                                    text = "🔒 Замок вкуса: Созвучие $userResonancePercent% (нужно ≥ ${venue.minResonancePercent}%)\nВключите в наушниках трек схожего жанра, чтобы взломать пароль.",
-                                    color = colors.textSecondary,
-                                    fontSize = 11.sp,
-                                    lineHeight = 16.sp
-                                )
-                            }
-                        }
                     }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(colors.line))
                 }
             }
 
             // Time Capsules
             items(filteredCapsules) { capsule ->
-                Box(
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(colors.surface, RoundedCornerShape(8.dp))
-                        .border(1.5.dp, colors.capsuleEmerald, RoundedCornerShape(8.dp))
-                        .padding(14.dp)
+                        .padding(vertical = 10.dp)
                 ) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Diamond amber glyph
+                        Box(
+                            modifier = Modifier
+                                .size(11.dp)
+                                .rotate(45f)
+                                .background(colors.gold.copy(alpha = 0.14f))
+                                .border(1.dp, colors.gold)
+                        )
+
+                        Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "⏳ КАПСУЛА ВРЕМЕНИ • ${capsule.locationName.uppercase()}",
-                                color = colors.capsuleEmerald,
+                                text = if (capsule.minResonancePercent > 0) "ТАЙНИК · ${capsule.daysRemaining()} ДНЕЙ" else "ШЁПОТ · БЕЗ ЗАМКА",
+                                color = colors.faint,
                                 fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold
+                                fontSize = 6.5.sp,
+                                letterSpacing = 0.8.sp
                             )
                             Text(
-                                text = "${capsule.distanceMeters} м • ${capsule.daysRemaining()} дн.",
-                                color = colors.textSecondary,
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 10.sp
+                                text = capsule.locationName,
+                                color = colors.ink,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.5.sp,
+                                letterSpacing = (-0.2).sp
+                            )
+                            Text(
+                                text = "${capsule.distanceMeters} м · ${capsule.artist} — ${capsule.track}",
+                                color = colors.sub,
+                                fontSize = 8.sp
+                            )
+                            Text(
+                                text = "«${capsule.message}»",
+                                color = colors.sub,
+                                fontSize = 8.5.sp
                             )
                         }
 
                         Text(
-                            text = "${capsule.artist} — «${capsule.track}»",
-                            color = colors.textPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp
-                        )
-
-                        Text(
-                            text = "«${capsule.message}»",
-                            color = colors.textSecondary,
-                            fontSize = 12.sp,
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                            lineHeight = 16.sp
+                            text = "→",
+                            color = colors.faint,
+                            fontSize = 13.sp
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Box(modifier = Modifier.fillMaxWidth().height(0.5.dp).background(colors.line))
                 }
             }
 
-            // Create Capsule action button
+            // Leave Capsule button
             item {
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(colors.surface, RoundedCornerShape(8.dp))
-                        .border(1.5.dp, colors.accent, RoundedCornerShape(8.dp))
-                        .clickable(onClick = onCreateCapsule)
-                        .padding(14.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(
-                            text = "+ Оставить звуковую капсулу здесь",
-                            color = colors.textPrimary,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp
-                        )
-                        Text(
-                            text = "(1 бесплатная на этой неделе)",
-                            color = colors.textSecondary,
-                            fontSize = 10.sp
-                        )
-                    }
-                }
-            }
-
-            // Subtle B2B link at bottom
-            item {
-                Spacer(modifier = Modifier.height(8.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onClaimVenueB2B)
-                        .padding(vertical = 12.dp),
+                        .height(38.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(colors.surface)
+                        .border(1.dp, colors.line, RoundedCornerShape(8.dp))
+                        .clickable(onClick = onCreateCapsule),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "Для владельцев кофеен и баров: Заявить звуковой маяк квартала →",
-                        color = colors.textSubtle,
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp
+                        text = "+ Оставить свой тайник",
+                        color = colors.sub,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
@@ -313,22 +258,24 @@ private fun RadiusChip(
     onClick: () -> Unit
 ) {
     val colors = LocalEchoColors.current
-    val bg = if (selected) colors.accent else colors.surface
-    val contentColor = if (selected) Color.White else colors.textSecondary
+    val bg = if (selected) colors.accent.copy(alpha = 0.12f) else Color.Transparent
+    val textCol = if (selected) colors.accent else colors.sub
+    val borderCol = if (selected) colors.accent.copy(alpha = 0.45f) else colors.line
 
     Box(
         modifier = Modifier
-            .background(bg, RoundedCornerShape(4.dp))
-            .border(1.dp, if (selected) colors.accent else colors.border, RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(999.dp))
+            .background(bg)
+            .border(1.dp, borderCol, RoundedCornerShape(999.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 10.dp, vertical = 6.dp)
+            .padding(horizontal = 9.dp, vertical = 4.dp),
+        contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
-            color = contentColor,
+            color = textCol,
             fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-            fontSize = 10.sp
+            fontSize = 7.5.sp
         )
     }
 }

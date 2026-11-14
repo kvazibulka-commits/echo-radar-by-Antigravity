@@ -2,36 +2,51 @@ package ru.echo.radar.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-object IndustrialDayColors {
-    val Background = Color(0xFFF4F3EE)
-    val Surface = Color(0xFFE8E6DD)
-    val SurfaceElevated = Color(0xFFDCD8CD)
-    val Border = Color(0xFFCEC9BA)
-    val BorderBold = Color(0xFF191A1C)
-    val TextPrimary = Color(0xFF191A1C)
-    val TextSecondary = Color(0xFF6B685F)
-    val TextSubtle = Color(0xFF8F8C82)
-    val Accent = Color(0xFFFF5500) // Safety Orange
-    val AccentSecondary = Color(0xFF0066FF) // Cobalt
-    val RadarBg = Color(0xFFE3E0D4)
-    val RadarGrid = Color(0xFFB8B3A0)
-    val VenueGold = Color(0xFFEAB308)
-    val CapsuleEmerald = Color(0xFF10B981)
+// Concept A «Атлас» — Точные токены дизайна из дизайн-стенда ЭХО Студия 2.0
+// День: Бумага #F3EFE6 и чернила #171A1C, контраст ~15:1
+object AtlasDayColors {
+    val Background = Color(0xFFF3EFE6)    // Матовая бумага
+    val Surface = Color(0xFFFBF8F1)       // Светлая бумага
+    val Surface2 = Color(0xFFE9E2D4)      // Вспомогательная бумага
+    val Ink = Color(0xFF171A1C)           // Типографские чернила
+    val Sub = Color(0xFF5C625F)           // Второстепенный текст
+    val Faint = Color(0xFF8A8D86)         // Микротекст, метки, разметка
+    val Line = Color(0xFFD8D2C4)          // Тонкая линия разметки
+    val LineStrong = Color(0xFFB9B2A2)    // Усиленная линия
+    val Accent = Color(0xFF0B6E75)        // Теаль (основной акцент и живая точка)
+    val Accent2 = Color(0xFFA85A0A)       // Терракота (капсулы, тайники, курсив заголовка)
+    val Live = Color(0xFF0B6E75)
+    val Gold = Color(0xFFA85A0A)
 }
 
-object IndustrialEveningColors {
-    val Background = Color(0xFF141518)
-    val Surface = Color(0xFF1E2026)
-    val SurfaceElevated = Color(0xFF282B33)
-    val Border = Color(0xFF323642)
-    val BorderBold = Color(0xFFFF7700)
-    val TextPrimary = Color(0xFFECEEF2)
-    val TextSecondary = Color(0xFF8F95A3)
-    val TextSubtle = Color(0xFF5C6270)
-    val Accent = Color(0xFFFF7700) // Vacuum Tube Amber
-    val AccentSecondary = Color(0xFF38BDF8) // Cyan LED
-    val RadarBg = Color(0xFF17191E)
-    val RadarGrid = Color(0xFF2C313E)
-    val VenueGold = Color(0xFFEAB308)
-    val CapsuleEmerald = Color(0xFF10B981)
+// Сумерки: Лампа и янтарь
+object AtlasDuskColors {
+    val Background = Color(0xFF241F1B)    // Тёмный ламповый графит
+    val Surface = Color(0xFF2E2823)
+    val Surface2 = Color(0xFF3A322B)
+    val Ink = Color(0xFFF4EBDD)
+    val Sub = Color(0xFFBCAF9E)
+    val Faint = Color(0xFF8C8071)
+    val Line = Color(0xFF453C33)
+    val LineStrong = Color(0xFF5D5145)
+    val Accent = Color(0xFFF0A45C)        // Янтарь лампы
+    val Accent2 = Color(0xFF7DD3C7)       // Мята
+    val Live = Color(0xFFF0A45C)
+    val Gold = Color(0xFFE3B778)
+}
+
+// Ночь: Зелёно-чёрный и мята
+object AtlasNightColors {
+    val Background = Color(0xFF0A0D11)    // Зелёно-чёрный глубокий фон
+    val Surface = Color(0xFF11161B)
+    val Surface2 = Color(0xFF182027)
+    val Ink = Color(0xFFEEF1EF)
+    val Sub = Color(0xFF94A199)
+    val Faint = Color(0xFF5F6B65)
+    val Line = Color(0xFF24302C)
+    val LineStrong = Color(0xFF34443D)
+    val Accent = Color(0xFF5EEAD4)        // Неоновая мята
+    val Accent2 = Color(0xFFE0A45C)       // Янтарь
+    val Live = Color(0xFF5EEAD4)
+    val Gold = Color(0xFFE0A45C)
 }

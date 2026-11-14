@@ -9,37 +9,46 @@ import androidx.compose.ui.graphics.Color
 data class EchoColors(
     val background: Color,
     val surface: Color,
-    val surfaceElevated: Color,
-    val border: Color,
-    val borderBold: Color,
-    val textPrimary: Color,
-    val textSecondary: Color,
-    val textSubtle: Color,
+    val surface2: Color,
+    val ink: Color,
+    val sub: Color,
+    val faint: Color,
+    val line: Color,
+    val lineStrong: Color,
     val accent: Color,
-    val accentSecondary: Color,
-    val radarBg: Color,
-    val radarGrid: Color,
-    val venueGold: Color,
-    val capsuleEmerald: Color,
-    val isEvening: Boolean
-)
+    val accent2: Color,
+    val live: Color,
+    val gold: Color,
+    val isEvening: Boolean = false
+) {
+    // Backwards compatibility aliases
+    val textPrimary: Color get() = ink
+    val textSecondary: Color get() = sub
+    val textSubtle: Color get() = faint
+    val border: Color get() = line
+    val borderBold: Color get() = lineStrong
+    val radarBg: Color get() = surface
+    val radarGrid: Color get() = line
+    val venueGold: Color get() = gold
+    val capsuleEmerald: Color get() = accent
+    val surfaceElevated: Color get() = surface2
+    val accentSecondary: Color get() = accent2
+}
 
 val LocalEchoColors = staticCompositionLocalOf {
     EchoColors(
-        background = IndustrialDayColors.Background,
-        surface = IndustrialDayColors.Surface,
-        surfaceElevated = IndustrialDayColors.SurfaceElevated,
-        border = IndustrialDayColors.Border,
-        borderBold = IndustrialDayColors.BorderBold,
-        textPrimary = IndustrialDayColors.TextPrimary,
-        textSecondary = IndustrialDayColors.TextSecondary,
-        textSubtle = IndustrialDayColors.TextSubtle,
-        accent = IndustrialDayColors.Accent,
-        accentSecondary = IndustrialDayColors.AccentSecondary,
-        radarBg = IndustrialDayColors.RadarBg,
-        radarGrid = IndustrialDayColors.RadarGrid,
-        venueGold = IndustrialDayColors.VenueGold,
-        capsuleEmerald = IndustrialDayColors.CapsuleEmerald,
+        background = AtlasDayColors.Background,
+        surface = AtlasDayColors.Surface,
+        surface2 = AtlasDayColors.Surface2,
+        ink = AtlasDayColors.Ink,
+        sub = AtlasDayColors.Sub,
+        faint = AtlasDayColors.Faint,
+        line = AtlasDayColors.Line,
+        lineStrong = AtlasDayColors.LineStrong,
+        accent = AtlasDayColors.Accent,
+        accent2 = AtlasDayColors.Accent2,
+        live = AtlasDayColors.Live,
+        gold = AtlasDayColors.Gold,
         isEvening = false
     )
 }
@@ -51,38 +60,34 @@ fun EchoIndustrialTheme(
 ) {
     val echoColors = if (isEvening) {
         EchoColors(
-            background = IndustrialEveningColors.Background,
-            surface = IndustrialEveningColors.Surface,
-            surfaceElevated = IndustrialEveningColors.SurfaceElevated,
-            border = IndustrialEveningColors.Border,
-            borderBold = IndustrialEveningColors.BorderBold,
-            textPrimary = IndustrialEveningColors.TextPrimary,
-            textSecondary = IndustrialEveningColors.TextSecondary,
-            textSubtle = IndustrialEveningColors.TextSubtle,
-            accent = IndustrialEveningColors.Accent,
-            accentSecondary = IndustrialEveningColors.AccentSecondary,
-            radarBg = IndustrialEveningColors.RadarBg,
-            radarGrid = IndustrialEveningColors.RadarGrid,
-            venueGold = IndustrialEveningColors.VenueGold,
-            capsuleEmerald = IndustrialEveningColors.CapsuleEmerald,
+            background = AtlasNightColors.Background,
+            surface = AtlasNightColors.Surface,
+            surface2 = AtlasNightColors.Surface2,
+            ink = AtlasNightColors.Ink,
+            sub = AtlasNightColors.Sub,
+            faint = AtlasNightColors.Faint,
+            line = AtlasNightColors.Line,
+            lineStrong = AtlasNightColors.LineStrong,
+            accent = AtlasNightColors.Accent,
+            accent2 = AtlasNightColors.Accent2,
+            live = AtlasNightColors.Live,
+            gold = AtlasNightColors.Gold,
             isEvening = true
         )
     } else {
         EchoColors(
-            background = IndustrialDayColors.Background,
-            surface = IndustrialDayColors.Surface,
-            surfaceElevated = IndustrialDayColors.SurfaceElevated,
-            border = IndustrialDayColors.Border,
-            borderBold = IndustrialDayColors.BorderBold,
-            textPrimary = IndustrialDayColors.TextPrimary,
-            textSecondary = IndustrialDayColors.TextSecondary,
-            textSubtle = IndustrialDayColors.TextSubtle,
-            accent = IndustrialDayColors.Accent,
-            accentSecondary = IndustrialDayColors.AccentSecondary,
-            radarBg = IndustrialDayColors.RadarBg,
-            radarGrid = IndustrialDayColors.RadarGrid,
-            venueGold = IndustrialDayColors.VenueGold,
-            capsuleEmerald = IndustrialDayColors.CapsuleEmerald,
+            background = AtlasDayColors.Background,
+            surface = AtlasDayColors.Surface,
+            surface2 = AtlasDayColors.Surface2,
+            ink = AtlasDayColors.Ink,
+            sub = AtlasDayColors.Sub,
+            faint = AtlasDayColors.Faint,
+            line = AtlasDayColors.Line,
+            lineStrong = AtlasDayColors.LineStrong,
+            accent = AtlasDayColors.Accent,
+            accent2 = AtlasDayColors.Accent2,
+            live = AtlasDayColors.Live,
+            gold = AtlasDayColors.Gold,
             isEvening = false
         )
     }

@@ -14,7 +14,13 @@ data class TimeCapsule(
     val expiresAt: Long = System.currentTimeMillis() + 7 * 24 * 60 * 60 * 1000L,
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
-    val locationName: String = "Сквер"
+    val locationName: String = "Сквер",
+    val angleDegrees: Float = 172f,
+    val normalizedRadius: Float = 0.92f,
+    val label: String? = null,
+    val reward: String = "",
+    val minResonancePercent: Int = 0,
+    val isLocked: Boolean = false
 ) {
     fun daysRemaining(): Int {
         val diff = expiresAt - System.currentTimeMillis()

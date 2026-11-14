@@ -30,5 +30,9 @@ data class EchoSignal(
     val timestamp: Long = System.currentTimeMillis(),
     val isPlaying: Boolean = true,
     val isSyncedWithUser: Boolean = false,
-    val albumArtUrl: String? = null
+    val albumArtUrl: String? = null,
+    val persona: String = "",
+    val story: String = "",
+    val label: String? = null,
+    val hue: Float = 212f
 )

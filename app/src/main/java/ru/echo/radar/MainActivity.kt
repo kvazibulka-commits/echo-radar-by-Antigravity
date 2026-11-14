@@ -5,25 +5,25 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
-import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import kotlinx.coroutines.launch
 import ru.echo.radar.data.local.EchoPreferences
 import ru.echo.radar.data.local.LocalChronicleStorage
 import ru.echo.radar.domain.model.*
@@ -31,7 +31,7 @@ import ru.echo.radar.service.EchoMediaListenerService
 import ru.echo.radar.service.EchoSoundManager
 import ru.echo.radar.ui.beacons.BeaconsScreen
 import ru.echo.radar.ui.chronicle.ChronicleScreen
-import ru.echo.radar.ui.components.IndustrialBadge
+import ru.echo.radar.ui.components.GenArtCover
 import ru.echo.radar.ui.components.IndustrialButton
 import ru.echo.radar.ui.deck.DeckScreen
 import ru.echo.radar.ui.radar.RadarScreen
@@ -39,10 +39,10 @@ import ru.echo.radar.ui.theme.EchoIndustrialTheme
 import ru.echo.radar.ui.theme.LocalEchoColors
 
 enum class EchoScreen(val label: String, val icon: String) {
-    ETHER("ЭФИР", "📡"),
-    DECK("ДЕКА", "💿"),
-    CHRONICLE("ХРОНИКА", "📜"),
-    BEACONS("ТАЙНИКИ", "📍")
+    ETHER("Эфир", "◎"),
+    DECK("Дека", "◍"),
+    CHRONICLE("Отзвуки", "∿"),
+    BEACONS("Тайники", "◇")
 }
 
 class MainActivity : ComponentActivity() {
@@ -51,7 +51,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var preferences: EchoPreferences
     private val chronicleStorage = LocalChronicleStorage()
 
-    // Active track state
+    // Active track state from notification capture
     private val activeTrackState = mutableStateOf<EchoSignal?>(null)
 
     private val trackReceiver = object : BroadcastReceiver() {
@@ -82,7 +82,9 @@ class MainActivity : ComponentActivity() {
                 camelotKey = "8A",
                 bpm = 120,
                 genre = "Инди",
-                isPlaying = isPlaying
+                isPlaying = isPlaying,
+                persona = "Мой текущий сигнал",
+                story = "Звучит прямо сейчас в твоих наушниках через ${source.displayName}."
             )
 
             activeTrackState.value = newSignal
@@ -109,81 +111,189 @@ class MainActivity : ComponentActivity() {
         registerReceiver(trackReceiver, filter, RECEIVER_EXPORTED)
 
         setContent {
-            val scope = rememberCoroutineScope()
             var isEveningMode by remember { mutableStateOf(false) }
             var currentScreen by remember { mutableStateOf(EchoScreen.ETHER) }
 
-            // Default signal seeds for realistic radar experience
-            var signals by remember {
+            // Exact 7 Signals from design stand (Concept A «Атлас»)
+            val signals by remember {
                 mutableStateOf(
                     listOf(
                         EchoSignal(
-                            id = "sig-1",
-                            artist = "Дайте танк (!)",
-                            track = "Смешно",
-                            album = "Человеко-часы (2020)",
+                            id = "s1",
+                            persona = "Пилигрим неоновых панелек",
+                            artist = "Молчат Дома",
+                            track = "Судно (Борис Рижий)",
+                            genre = "Пост-панк",
                             source = SignalSource.YANDEX_MUSIC,
-                            distanceMeters = 65,
-                            angleDegrees = 45f,
-                            normalizedRadius = 0.35f,
-                            resonancePercent = 88,
-                            camelotKey = "8A",
-                            bpm = 128,
-                            genre = "Инди-рок"
-                        ),
-                        EchoSignal(
-                            id = "sig-2",
-                            artist = "Сироткин",
-                            track = "Выше домов",
-                            album = "Эхолот (2020)",
-                            source = SignalSource.SPOTIFY,
-                            distanceMeters = 120,
-                            angleDegrees = 155f,
-                            normalizedRadius = 0.55f,
                             resonancePercent = 94,
+                            bpm = 128,
+                            camelotKey = "8A",
+                            angleDegrees = 318f, // -42 deg
+                            normalizedRadius = 0.62f,
+                            label = "Судно · 94",
+                            story = "Упругий бас пустых дворов и ровный стук драм-машины под мерцанием тусклых окон.",
+                            hue = 212f
+                        ),
+                        EchoSignal(
+                            id = "s2",
+                            persona = "Архивариус забытых кассет",
+                            artist = "Sirotkin",
+                            track = "Август",
+                            genre = "Инди-фолк",
+                            source = SignalSource.YANDEX_MUSIC,
+                            resonancePercent = 91,
+                            bpm = 92,
                             camelotKey = "11B",
-                            bpm = 118,
-                            genre = "Инди-фолк"
+                            angleDegrees = 16f,
+                            normalizedRadius = 0.82f,
+                            story = "Тёплые гитарные реверберации превращают суету вечерней улицы в медленный ночной фильм.",
+                            hue = 32f
                         ),
                         EchoSignal(
-                            id = "sig-3",
-                            artist = "Shortparis",
-                            track = "Страшно",
-                            album = "Так закалялась сталь",
+                            id = "s3",
+                            persona = "Ловец ночных дождей",
+                            artist = "Burial",
+                            track = "Archangel",
+                            genre = "Future garage",
+                            source = SignalSource.SPOTIFY,
+                            resonancePercent = 88,
+                            bpm = 138,
+                            camelotKey = "2A",
+                            angleDegrees = 64f,
+                            normalizedRadius = 0.55f,
+                            story = "Шорохи винила и звуки зажигалки в пустом ночном автобусе Южного Лондона.",
+                            hue = 268f
+                        ),
+                        EchoSignal(
+                            id = "s4",
+                            persona = "Хранитель полуночных костров",
+                            artist = "КИНО",
+                            track = "Звезда по имени Солнце",
+                            genre = "Русский рок",
                             source = SignalSource.VK_MUSIC,
-                            distanceMeters = 210,
-                            angleDegrees = 285f,
-                            normalizedRadius = 0.72f,
-                            resonancePercent = 71,
-                            camelotKey = "5A",
-                            bpm = 134,
-                            genre = "Пост-панк"
+                            resonancePercent = 96,
+                            bpm = 118,
+                            camelotKey = "9A",
+                            angleDegrees = 142f,
+                            normalizedRadius = 0.78f,
+                            label = "Звезда · 96",
+                            story = "Лаконичный гитарный перебор звучит как пульс целого поколения.",
+                            hue = 44f
                         ),
                         EchoSignal(
-                            id = "sig-4",
-                            artist = "Хадн Дадн",
-                            track = "Мы сегодня дома",
-                            source = SignalSource.BEACON_VENUE,
-                            distanceMeters = 85,
-                            angleDegrees = 105f,
-                            normalizedRadius = 0.42f,
-                            resonancePercent = 82,
-                            camelotKey = "7B",
-                            bpm = 120,
-                            genre = "Инди-поп"
+                            id = "s5",
+                            persona = "Хранитель сонных созвездий",
+                            artist = "Beach House",
+                            track = "Space Song",
+                            genre = "Dream pop",
+                            source = SignalSource.YANDEX_MUSIC,
+                            resonancePercent = 84,
+                            bpm = 147,
+                            camelotKey = "5B",
+                            angleDegrees = 202f,
+                            normalizedRadius = 0.60f,
+                            story = "Тёплый органный аккорд и винтажная драм-машина убаюкивают вечер.",
+                            hue = 310f
                         ),
                         EchoSignal(
-                            id = "sig-5",
-                            artist = "Дельфин",
-                            track = "Июнь",
-                            source = SignalSource.TIME_CAPSULE,
-                            distanceMeters = 310,
-                            angleDegrees = 220f,
-                            normalizedRadius = 0.84f,
-                            resonancePercent = 78,
+                            id = "s6",
+                            persona = "Мастер акустической тишины",
+                            artist = "Nils Frahm",
+                            track = "Says",
+                            genre = "Неоклассика",
+                            source = SignalSource.ZVUK,
+                            resonancePercent = 79,
+                            bpm = 68,
                             camelotKey = "4A",
-                            bpm = 96,
-                            genre = "Альтернатива"
+                            angleDegrees = 250f,
+                            normalizedRadius = 0.84f,
+                            story = "Стук молоточков фортепиано и дыхание зала: механика инструмента становится живой.",
+                            hue = 190f
+                        ),
+                        EchoSignal(
+                            id = "s7",
+                            persona = "Ловец виниловых волн",
+                            artist = "Pompeya",
+                            track = "90",
+                            genre = "Dream groove",
+                            source = SignalSource.YANDEX_MUSIC,
+                            resonancePercent = 82,
+                            bpm = 110,
+                            camelotKey = "7B",
+                            angleDegrees = 312f,
+                            normalizedRadius = 0.50f,
+                            story = "Мягкий фанковый бас и ностальгия калифорнийского заката в наушниках.",
+                            hue = 24f
+                        )
+                    )
+                )
+            }
+
+            // Venue Beacons matching design stand
+            val venueBeacons by remember {
+                mutableStateOf(
+                    listOf(
+                        VenueBeacon(
+                            id = "venue",
+                            name = "Кофейня «Соль»",
+                            venueType = VenueType.COFFEE,
+                            currentTrack = "Судно (Борис Рижий)",
+                            currentArtist = "Молчат Дома",
+                            streamingSource = "Яндекс Музыка",
+                            distanceMeters = 120,
+                            minResonancePercent = 75,
+                            proofCode = "СУДНО",
+                            discountDescription = "Фильтр-кофе −20% за созвучие",
+                            angleDegrees = 100f,
+                            normalizedRadius = 0.44f,
+                            label = "Соль · 120 м",
+                            whisper = "Сегодня здесь варят кофе под пост-панк. Скажите бариста кодовое слово — и получите чашку с созвучием."
+                        ),
+                        VenueBeacon(
+                            id = "book",
+                            name = "Дом книги на Сретенке",
+                            venueType = VenueType.BOOKSHOP,
+                            currentTrack = "Август",
+                            currentArtist = "Sirotkin",
+                            streamingSource = "Яндекс Музыка",
+                            distanceMeters = 240,
+                            minResonancePercent = 60,
+                            proofCode = "АВГУСТ",
+                            discountDescription = "Закладка ручной работы внутри",
+                            angleDegrees = 172f,
+                            normalizedRadius = 0.92f,
+                            label = "Дом книги · 240 м",
+                            whisper = "Тот, кто листает страницы под акустику, уносит с собой целый вечер."
+                        )
+                    )
+                )
+            }
+
+            // Time Capsules matching design stand
+            val timeCapsules by remember {
+                mutableStateOf(
+                    listOf(
+                        TimeCapsule(
+                            id = "patriarch",
+                            artist = "Nils Frahm",
+                            track = "Says",
+                            message = "Тот, кто слушает дождь, уже дома.",
+                            distanceMeters = 410,
+                            locationName = "Тайник у Патриарших",
+                            angleDegrees = 286f,
+                            normalizedRadius = 0.36f,
+                            reward = "Шёпот · без замка"
+                        ),
+                        TimeCapsule(
+                            id = "vinyl",
+                            artist = "Burial",
+                            track = "Archangel",
+                            message = "Полка с электроникой. Игла уже опущена — осталось совпасть.",
+                            distanceMeters = 620,
+                            locationName = "Виниловая лавка",
+                            minResonancePercent = 80,
+                            isLocked = true,
+                            reward = "−15% на пластинку"
                         )
                     )
                 )
@@ -191,74 +301,84 @@ class MainActivity : ComponentActivity() {
 
             var selectedSignal by remember { mutableStateOf<EchoSignal?>(signals.first()) }
             var isSyncedWithSignal by remember { mutableStateOf(false) }
-
-            // Venue Beacons
-            val venueBeacons by remember {
-                mutableStateOf(
-                    listOf(
-                        VenueBeacon(
-                            id = "venue-1",
-                            name = "Кофейня «Фонотека & Зерно»",
-                            venueType = VenueType.COFFEE,
-                            currentTrack = "Мы сегодня дома",
-                            currentArtist = "Хадн Дадн",
-                            streamingSource = "Звук",
-                            distanceMeters = 85,
-                            minResonancePercent = 75,
-                            proofCode = "ЭХО-82",
-                            discountDescription = "Скидка 20% на спешлти фильтр-кофе бариста"
-                        ),
-                        VenueBeacon(
-                            id = "venue-2",
-                            name = "Винный бар & Джаз «Пластинка»",
-                            venueType = VenueType.BAR,
-                            currentTrack = "Blue in Green",
-                            currentArtist = "Miles Davis",
-                            streamingSource = "Яндекс Музыка",
-                            distanceMeters = 240,
-                            minResonancePercent = 75,
-                            proofCode = "JAZZ-90",
-                            discountDescription = "Бокал авторского сидра при созвучии"
-                        )
-                    )
-                )
-            }
-
-            // Time Capsules
-            val timeCapsules by remember {
-                mutableStateOf(
-                    listOf(
-                        TimeCapsule(
-                            id = "cap-1",
-                            artist = "Дельфин",
-                            track = "Июнь",
-                            message = "Здесь в ноябре первый снег ложился на мокрый асфальт, и этот трек играл на повторе...",
-                            distanceMeters = 310,
-                            locationName = "Сквер у Патриарших"
-                        )
-                    )
-                )
-            }
-
             val encounters by chronicleStorage.encounters.collectAsState()
 
             // Modals
+            var activePassportSignal by remember { mutableStateOf<EchoSignal?>(null) }
             var activeBaristaModalVenue by remember { mutableStateOf<VenueBeacon?>(null) }
-            var showCreateCapsuleModal by remember { mutableStateOf(false) }
-            var showVenueClaimModal by remember { mutableStateOf(false) }
+            var showNightDropModal by remember { mutableStateOf(false) }
 
             EchoIndustrialTheme(isEvening = isEveningMode) {
                 val colors = LocalEchoColors.current
 
                 Scaffold(
                     bottomBar = {
-                        EchoBottomBar(
-                            currentScreen = currentScreen,
-                            onScreenChange = { screen ->
-                                soundManager.playTactileClick()
-                                currentScreen = screen
+                        Column {
+                            // Mini Player (height 52dp)
+                            selectedSignal?.let { sig ->
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(52.dp)
+                                        .background(colors.surface)
+                                        .border(width = 0.5.dp, color = colors.line)
+                                        .clickable {
+                                            soundManager.playTactileClick()
+                                            currentScreen = EchoScreen.DECK
+                                        }
+                                        .padding(horizontal = 15.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(9.dp)
+                                ) {
+                                    GenArtCover(
+                                        hue = sig.hue,
+                                        modifier = Modifier.size(32.dp)
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "СЕЙЧАС ИГРАЕТ · ${sig.source.displayName.uppercase()}",
+                                            color = colors.faint,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 6.5.sp,
+                                            letterSpacing = 0.6.sp
+                                        )
+                                        Text(
+                                            text = "${sig.artist} — ${sig.track}",
+                                            color = colors.ink,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontSize = 9.5.sp,
+                                            maxLines = 1
+                                        )
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .border(1.dp, colors.line, CircleShape)
+                                            .clickable {
+                                                isSyncedWithSignal = !isSyncedWithSignal
+                                                if (isSyncedWithSignal) soundManager.playNeedleDrop() else soundManager.playTactileClick()
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = if (isSyncedWithSignal) "⏸" else "▶",
+                                            color = colors.ink,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
                             }
-                        )
+
+                            // Tabbar (height 58dp)
+                            EchoAtlasTabBar(
+                                currentScreen = currentScreen,
+                                onScreenChange = { screen ->
+                                    soundManager.playTactileClick()
+                                    currentScreen = screen
+                                }
+                            )
+                        }
                     }
                 ) { innerPadding ->
                     Box(
@@ -270,15 +390,25 @@ class MainActivity : ComponentActivity() {
                             EchoScreen.ETHER -> {
                                 RadarScreen(
                                     signals = signals,
+                                    venueBeacons = venueBeacons,
                                     selectedSignal = selectedSignal,
+                                    isEveningMode = isEveningMode,
+                                    onToggleEveningMode = {
+                                        isEveningMode = !isEveningMode
+                                        soundManager.playTactileClick()
+                                    },
                                     onSignalSelect = { sig ->
                                         soundManager.playSonarPing()
                                         selectedSignal = sig
+                                        activePassportSignal = sig
                                     },
-                                    onOpenDeck = { sig ->
-                                        selectedSignal = sig
+                                    onBeaconSelect = { venue ->
+                                        soundManager.playSonarPing()
+                                        activeBaristaModalVenue = venue
+                                    },
+                                    onOpenNightDrop = {
                                         soundManager.playTactileClick()
-                                        currentScreen = EchoScreen.DECK
+                                        showNightDropModal = true
                                     }
                                 )
                             }
@@ -304,37 +434,108 @@ class MainActivity : ComponentActivity() {
                                 BeaconsScreen(
                                     venueBeacons = venueBeacons,
                                     timeCapsules = timeCapsules,
-                                    userResonancePercent = selectedSignal?.resonancePercent ?: 82,
+                                    userResonancePercent = selectedSignal?.resonancePercent ?: 94,
                                     onShowBaristaCode = { venue ->
                                         soundManager.playSonarPing()
                                         activeBaristaModalVenue = venue
                                     },
                                     onCreateCapsule = {
                                         soundManager.playTactileClick()
-                                        showCreateCapsuleModal = true
                                     },
                                     onClaimVenueB2B = {
                                         soundManager.playTactileClick()
-                                        showVenueClaimModal = true
                                     }
                                 )
                             }
                         }
+                    }
+                }
 
-                        // Day / Evening floating quick switch
+                // Modal: Звуковой паспорт сигнала
+                activePassportSignal?.let { sig ->
+                    Dialog(onDismissRequest = { activePassportSignal = null }) {
                         Box(
                             modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(top = 16.dp, end = 16.dp)
-                                .clickable {
-                                    isEveningMode = !isEveningMode
-                                    soundManager.playTactileClick()
-                                }
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(colors.surface)
+                                .border(1.dp, colors.line, RoundedCornerShape(12.dp))
+                                .padding(18.dp)
                         ) {
-                            IndustrialBadge(
-                                text = if (isEveningMode) "🌙 ВЕЧЕР" else "☀️ ДЕНЬ",
-                                highlight = false
-                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    GenArtCover(hue = sig.hue, modifier = Modifier.size(44.dp))
+                                    Column {
+                                        Text(
+                                            text = "ЗВУКОВОЙ ПАСПОРТ",
+                                            color = colors.faint,
+                                            fontFamily = FontFamily.Monospace,
+                                            fontSize = 7.5.sp,
+                                            letterSpacing = 1.sp
+                                        )
+                                        Text(
+                                            text = sig.track,
+                                            color = colors.ink,
+                                            fontFamily = FontFamily.Serif,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 16.sp
+                                        )
+                                        Text(
+                                            text = "${sig.artist} · ${sig.genre}",
+                                            color = colors.sub,
+                                            fontSize = 9.sp
+                                        )
+                                    }
+                                }
+
+                                Text(
+                                    text = "${sig.persona.uppercase()} · РЕЗОНАНС ${sig.resonancePercent}%",
+                                    color = colors.accent,
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 7.5.sp,
+                                    letterSpacing = 0.8.sp
+                                )
+
+                                Text(
+                                    text = sig.story,
+                                    color = colors.sub,
+                                    fontSize = 9.5.sp,
+                                    lineHeight = 14.sp
+                                )
+
+                                // Acoustic 3 stats
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .border(0.5.dp, colors.line)
+                                        .padding(vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceEvenly
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("РЕЗОНАНС", color = colors.faint, fontFamily = FontFamily.Monospace, fontSize = 6.5.sp)
+                                        Text("${sig.resonancePercent}%", color = colors.ink, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    }
+                                    Box(modifier = Modifier.width(0.5.dp).height(24.dp).background(colors.line))
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("ТЕМП", color = colors.faint, fontFamily = FontFamily.Monospace, fontSize = 6.5.sp)
+                                        Text("${sig.bpm}", color = colors.ink, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    }
+                                    Box(modifier = Modifier.width(0.5.dp).height(24.dp).background(colors.line))
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("CAMELOT", color = colors.faint, fontFamily = FontFamily.Monospace, fontSize = 6.5.sp)
+                                        Text(sig.camelotKey, color = colors.ink, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    }
+                                }
+
+                                IndustrialButton(
+                                    text = "Слушать в ${sig.source.displayName}",
+                                    onClick = { activePassportSignal = null },
+                                    isPrimary = true
+                                )
+                            }
                         }
                     }
                 }
@@ -345,54 +546,58 @@ class MainActivity : ComponentActivity() {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(colors.surface, RoundedCornerShape(12.dp))
-                                .border(2.dp, colors.venueGold, RoundedCornerShape(12.dp))
-                                .padding(20.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(colors.surface)
+                                .border(1.dp, colors.gold, RoundedCornerShape(12.dp))
+                                .padding(18.dp)
                         ) {
                             Column(
                                 horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 Text(
-                                    text = "PROOF-OF-MUSIC // ПОДТВЕРЖДЕНО",
-                                    color = colors.venueGold,
+                                    text = "PROOF-OF-MUSIC // ТАЙНИК",
+                                    color = colors.gold,
                                     fontFamily = FontFamily.Monospace,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp
+                                    fontSize = 7.5.sp,
+                                    letterSpacing = 1.sp
                                 )
                                 Text(
                                     text = venue.name,
-                                    color = colors.textPrimary,
-                                    fontWeight = FontWeight.Black,
+                                    color = colors.ink,
+                                    fontFamily = FontFamily.Serif,
+                                    fontWeight = FontWeight.Bold,
                                     fontSize = 18.sp
                                 )
 
                                 Box(
                                     modifier = Modifier
-                                        .background(colors.surfaceElevated, RoundedCornerShape(8.dp))
-                                        .border(2.dp, colors.venueGold, RoundedCornerShape(8.dp))
-                                        .padding(16.dp),
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(colors.surface2)
+                                        .border(1.dp, colors.gold.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                        .padding(14.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                         Text(
-                                            text = "КОД ДЛЯ БАРИСТА:",
-                                            color = colors.textSecondary,
+                                            text = "СЕКРЕТНЫЙ КОД БАРИСТА:",
+                                            color = colors.faint,
                                             fontFamily = FontFamily.Monospace,
-                                            fontSize = 10.sp
+                                            fontSize = 7.5.sp
                                         )
                                         Text(
                                             text = venue.proofCode,
-                                            color = colors.accent,
+                                            color = colors.accent2,
                                             fontFamily = FontFamily.Monospace,
                                             fontWeight = FontWeight.Black,
-                                            fontSize = 28.sp,
+                                            fontSize = 26.sp,
                                             letterSpacing = 2.sp
                                         )
                                         Text(
                                             text = venue.discountDescription,
-                                            color = colors.textPrimary,
-                                            fontSize = 12.sp,
+                                            color = colors.ink,
+                                            fontSize = 10.5.sp,
                                             fontWeight = FontWeight.Bold,
                                             modifier = Modifier.padding(top = 4.dp)
                                         )
@@ -400,130 +605,58 @@ class MainActivity : ComponentActivity() {
                                 }
 
                                 Text(
-                                    text = "Покажите этот экран бариста. Заведение убедится в созвучии вашего вкуса.",
-                                    color = colors.textSecondary,
-                                    fontSize = 11.sp,
-                                    lineHeight = 16.sp
+                                    text = venue.whisper,
+                                    color = colors.sub,
+                                    fontSize = 9.sp,
+                                    lineHeight = 13.sp
                                 )
 
                                 IndustrialButton(
                                     text = "Закрыть",
                                     onClick = { activeBaristaModalVenue = null },
-                                    isPrimary = true,
-                                    modifier = Modifier.fillMaxWidth()
+                                    isPrimary = true
                                 )
                             }
                         }
                     }
                 }
 
-                // Modal: Create Capsule
-                if (showCreateCapsuleModal) {
-                    Dialog(onDismissRequest = { showCreateCapsuleModal = false }) {
+                // Modal: Night Drop
+                if (showNightDropModal) {
+                    Dialog(onDismissRequest = { showNightDropModal = false }) {
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(colors.surface, RoundedCornerShape(12.dp))
-                                .border(1.5.dp, colors.border, RoundedCornerShape(12.dp))
-                                .padding(20.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(colors.surface)
+                                .border(1.dp, colors.line, RoundedCornerShape(12.dp))
+                                .padding(18.dp)
                         ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Text(
-                                    text = "Оставить звуковую капсулу",
-                                    color = colors.textPrimary,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 17.sp
-                                )
-                                Text(
-                                    text = "Привяжите текущую песню и мысль к этой точке города на 7 дней.",
-                                    color = colors.textSecondary,
-                                    fontSize = 12.sp,
-                                    lineHeight = 16.sp
-                                )
-
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .background(colors.surfaceElevated, RoundedCornerShape(6.dp))
-                                        .border(1.dp, colors.border, RoundedCornerShape(6.dp))
-                                        .padding(10.dp)
-                                ) {
-                                    Text(
-                                        text = "ТРЕК: ${selectedSignal?.artist} — ${selectedSignal?.track}",
-                                        color = colors.textPrimary,
-                                        fontFamily = FontFamily.Monospace,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                }
-
-                                Text(
-                                    text = "✓ 1 бесплатная капсула этой недели доступна",
-                                    color = colors.capsuleEmerald,
+                                    text = "НОЧНОЙ ДРОП · 00:00",
+                                    color = colors.gold,
                                     fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp
-                                )
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    IndustrialButton(
-                                        text = "Оставить след",
-                                        onClick = {
-                                            soundManager.playSonarPing()
-                                            showCreateCapsuleModal = false
-                                        },
-                                        isPrimary = true,
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    IndustrialButton(
-                                        text = "Отмена",
-                                        onClick = { showCreateCapsuleModal = false },
-                                        isPrimary = false
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Modal: Venue Claim B2B
-                if (showVenueClaimModal) {
-                    Dialog(onDismissRequest = { showVenueClaimModal = false }) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(colors.surface, RoundedCornerShape(12.dp))
-                                .border(1.5.dp, colors.border, RoundedCornerShape(12.dp))
-                                .padding(20.dp)
-                        ) {
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Text(
-                                    text = "Звуковой маяк заведения",
-                                    color = colors.textPrimary,
-                                    fontWeight = FontWeight.Black,
-                                    fontSize = 17.sp
+                                    fontSize = 7.5.sp,
+                                    letterSpacing = 1.sp
                                 )
                                 Text(
-                                    text = "Привлекайте людей своего культурного кода. ЭХО транслирует играющий в зале плейлист прохожим и дарит комплименты за музыкальное созвучие (Proof-of-Music).",
-                                    color = colors.textSecondary,
-                                    fontSize = 12.sp,
-                                    lineHeight = 16.sp
+                                    text = "Burial — Untrue",
+                                    color = colors.ink,
+                                    fontFamily = FontFamily.Serif,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 18.sp
                                 )
                                 Text(
-                                    text = "● Статус звуковой точки квартала\n● Скидки только при совпадении вкуса\n● 1 490 ₽ / месяц (счет ИП/самозанятым через Т-Банк)",
-                                    color = colors.textPrimary,
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 11.sp,
-                                    lineHeight = 16.sp
+                                    text = "Эксклюзивная премьера фрагмента откроется на набережной ровно в 00:00 — за 12 часов до мирового релиза. Никаких уведомлений: просто приходи в точку эфира.",
+                                    color = colors.sub,
+                                    fontSize = 9.5.sp,
+                                    lineHeight = 14.sp
                                 )
-
                                 IndustrialButton(
-                                    text = "Закрыть",
-                                    onClick = { showVenueClaimModal = false },
-                                    isPrimary = true,
-                                    modifier = Modifier.fillMaxWidth()
+                                    text = "Понятно",
+                                    onClick = { showNightDropModal = false },
+                                    isPrimary = true
                                 )
                             }
                         }
@@ -540,7 +673,7 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun EchoBottomBar(
+fun EchoAtlasTabBar(
     currentScreen: EchoScreen,
     onScreenChange: (EchoScreen) -> Unit
 ) {
@@ -549,36 +682,51 @@ fun EchoBottomBar(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .height(64.dp)
-            .background(colors.surface)
-            .border(width = 1.dp, color = colors.border),
+            .height(58.dp)
+            .background(colors.background)
+            .border(width = 0.5.dp, color = colors.line),
         horizontalArrangement = Arrangement.SpaceAround,
         verticalAlignment = Alignment.CenterVertically
     ) {
         EchoScreen.values().forEach { screen ->
             val isSelected = screen == currentScreen
-            val contentColor = if (isSelected) colors.accent else colors.textSecondary
+            val contentColor = if (isSelected) colors.ink else colors.faint
 
-            Column(
+            Box(
                 modifier = Modifier
                     .weight(1f)
-                    .clickable { onScreenChange(screen) }
-                    .padding(vertical = 8.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
+                    .fillMaxHeight()
+                    .clickable { onScreenChange(screen) },
+                contentAlignment = Alignment.Center
             ) {
-                Text(
-                    text = screen.icon,
-                    fontSize = 16.sp
-                )
-                Text(
-                    text = screen.label,
-                    color = contentColor,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 10.sp,
-                    letterSpacing = 0.5.sp
-                )
+                // Top indicator bar (18dp x 2dp) when active
+                if (isSelected) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .width(18.dp)
+                            .height(2.dp)
+                            .background(colors.accent)
+                    )
+                }
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    Text(
+                        text = screen.icon,
+                        color = contentColor,
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = screen.label,
+                        color = contentColor,
+                        fontSize = 8.sp,
+                        letterSpacing = 0.3.sp,
+                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                    )
+                }
             }
         }
     }

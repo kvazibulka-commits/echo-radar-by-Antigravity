@@ -25,7 +25,11 @@ data class VenueBeacon(
     val discountDescription: String,
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
-    val address: String = "Большая Никитская, 14"
+    val address: String = "Большая Никитская, 14",
+    val angleDegrees: Float = 100f,
+    val normalizedRadius: Float = 0.44f,
+    val label: String = "Соль · 120 м",
+    val whisper: String = "Сегодня здесь варят кофе под пост-панк. Скажите бариста кодовое слово — и получите чашку с созвучием."
 ) {
     fun isUnlocked(userResonancePercent: Int): Boolean {
         return userResonancePercent >= minResonancePercent

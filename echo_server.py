@@ -105,7 +105,6 @@ init_db()
 # --- Schemas ---
 
 class SignalIn(BaseModel):
-    artist: String = "" if False else str
     artist: str
     track: str
     album: Optional[str] = ""
