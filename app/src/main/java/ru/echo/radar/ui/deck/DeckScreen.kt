@@ -136,7 +136,7 @@ fun DeckScreen(
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(text = "РЕЗОНАНС", color = colors.faint, fontFamily = FontFamily.Monospace, fontSize = 7.sp, letterSpacing = 1.sp)
-                Row(verticalAlignment = Alignment.Baseline) {
+                Row(verticalAlignment = Alignment.Bottom) {
                     Text(text = "${sig.resonancePercent}", color = colors.ink, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Text(text = "%", color = colors.faint, fontSize = 9.sp)
                 }
@@ -144,7 +144,7 @@ fun DeckScreen(
             Box(modifier = Modifier.width(0.5.dp).height(30.dp).background(colors.line))
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(text = "ТЕМП", color = colors.faint, fontFamily = FontFamily.Monospace, fontSize = 7.sp, letterSpacing = 1.sp)
-                Row(verticalAlignment = Alignment.Baseline) {
+                Row(verticalAlignment = Alignment.Bottom) {
                     Text(text = "${sig.bpm}", color = colors.ink, fontFamily = FontFamily.Serif, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Text(text = " bpm", color = colors.faint, fontSize = 7.sp)
                 }
