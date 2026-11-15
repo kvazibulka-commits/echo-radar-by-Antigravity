@@ -70,6 +70,10 @@ python tools/publish_release.py --tag vX.Y.Z --body-file notes.md
 
 ## Решения, которые нельзя потерять
 
+0. **Модульный рефакторинг из `99e112fa` сохранён в `archive/modular-refactor/`.**
+   Он не компилируется вместе с монолитным `MainActivity.kt` (дубли `VinylTrack`,
+   `DeckScreen` и т.д.). Слияние — отдельная задача; не удаляй архив и не включай
+   его обратно в source set без полного переноса фич.
 1. **Туннель ≠ LAN.** Любой proxy-заголовок делает запрос внешним и требует токен.
 2. **Секреты только вне кода.** `echo_config.json`, `deploy_token.txt`, `.db`, `.apk`
    в `.gitignore`; в репозитории их нет.
