@@ -60,6 +60,7 @@ FILES_TO_COMMIT = [
     "tools/publish_release.py",
     "tools/install_skills.py",
     "docs/PROJECT_STATE.md",
+    "docs/CHRONICLE.md",
     "docs/design/phase1.html",
     "docs/design/phase1.png",
     "skills/README.md",

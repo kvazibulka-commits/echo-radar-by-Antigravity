@@ -34,6 +34,8 @@ Echo_vinyl/
 │   ├── echo-engineering/SKILL.md
 │   └── echo-quality/SKILL.md
 ├── docs/PROJECT_STATE.md          # Долговременная память: версии, решения, задачи
+├── docs/CHRONICLE.md              # Летопись работ: что сделано и следующий шаг
+├── docs/design/                   # HTML-визуализации до изменения дизайна
 ├── tests/test_echo_server.py      # Юнит-тесты ядра (stdlib unittest)
 ├── .github/workflows/build-apk.yml
 ├── deploy_build.py                # Публикация в GitHub + сборка APK (токен из env)
@@ -221,6 +223,9 @@ python tools/install_skills.py --list   :: что установлено
 Долговременное состояние проекта (версии, решения, открытые задачи) — в
 [docs/PROJECT_STATE.md](docs/PROJECT_STATE.md): этот файл читается первым после
 сжатия контекста или в новой сессии.
+
+История всех работ и текущий следующий шаг — в [docs/CHRONICLE.md](docs/CHRONICLE.md).
+Запись добавляется сверху после каждой сессии; блок «Следующий шаг» всегда в начале.
 
 ---
 

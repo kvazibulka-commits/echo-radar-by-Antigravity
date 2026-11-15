@@ -135,6 +135,7 @@ description: >-
 - [ ] README/CHANGELOG обновлены, новый файл добавлен в `FILES_TO_COMMIT`.
 - [ ] Сборка APK прошла в Actions, APK скачан.
 - [ ] Для релиза: тег, релиз, APK-ассет, sha256.
+- [ ] Запись в `docs/CHRONICLE.md` со следующим шагом и обновлённый `PROJECT_STATE.md`.
 
 ## Анти-паттерны ЭХО
 
