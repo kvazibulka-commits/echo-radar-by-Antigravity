@@ -38,6 +38,26 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.11"
     }
+
+    // В репозитории есть параллельный модульный рефакторинг (screens/, components/,
+    // state/…). Пока он не слит с монолитным MainActivity, исключаем его из сборки,
+    // чтобы не было дублей VinylTrack/DeckScreen. Файлы остаются в репозитории.
+    sourceSets {
+        getByName("main") {
+            java.exclude(
+                "ru/echo/radar/VinylTrack.kt",
+                "ru/echo/radar/screens/**",
+                "ru/echo/radar/components/**",
+                "ru/echo/radar/state/**",
+                "ru/echo/radar/data/**",
+                "ru/echo/radar/domain/**",
+                "ru/echo/radar/service/**",
+                "ru/echo/radar/theme/**",
+                "ru/echo/radar/ui/**",
+                "ru/echo/radar/acoustics/**"
+            )
+        }
+    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
