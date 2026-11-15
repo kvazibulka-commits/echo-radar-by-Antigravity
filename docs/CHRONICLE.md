@@ -18,6 +18,33 @@
 
 ---
 
+## 2026-11-15 — 3.5.0: Ambient UI и конкурентный анализ
+
+**Сделано**
+
+- Исследование интерфейсов: Around Music, Airbuds, Shazam, Endel, MD Vinyl,
+  Music Around, Spotify → `docs/design/COMPETITIVE_UI.md`.
+- Макет Phase 2: `docs/design/phase2.html` + `phase2.png` (радар с обложками,
+  mesh-фон, реакции, Дека-шторка, карта).
+- Android: mesh-фон на «Эфире» и «Деке» (`drawBehind`), строка «сейчас играет»
+  с эквалайзером (`NowPlayingStrip`/`LiveEqualizer`), реакции-чипсы в «Отзвуках».
+- `NearbyEchoSignal.reactions` парсится из `/api/state`.
+- Версии: Android `0.5.0-alpha` (9), сервер `3.5.0`.
+
+**Проверено**
+
+- CI run `43745418699` — success.
+- APK 9 755 456 байт, sha256
+  `1a87727668fbc042a4382378650b8c06826ce4341e2d5097ad22bcad4aff89b7`.
+- В APK: `NowPlayingStrip`, `LiveEqualizer`, `echo_eq`, `reactions`.
+
+**Релиз:** `v3.5.0` · коммит `5406dec2a7`.
+
+**Следующий шаг:** Phase 2b — плавающие обложки на радаре, Дека как full-height
+bottom sheet, экран «Карта» и навигация `Эфир / Карта / Отзвуки / Тайники`.
+
+---
+
 ## 2026-11-15 — введена летопись и правило следующего шага
 
 - Создан этот файл; в него перенесена история 3.1.0 → 3.4.0.
