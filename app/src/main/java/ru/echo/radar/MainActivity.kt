@@ -290,8 +290,7 @@ fun EchoRadarTheme(content: @Composable () -> Unit) {
 // =============================================================
 // ROOT APPLICATION COMPOSABLE
 // =============================================================
-@OptIn(ExperimentalFoundationApi::class)
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun EchoAppRoot() {
     val context = LocalContext.current
