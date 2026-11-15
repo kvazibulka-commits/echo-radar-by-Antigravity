@@ -5,11 +5,11 @@
 > `skills/*/SKILL.md` и `CHANGELOG.md`. Здесь зафиксировано то, что нельзя
 > восстановить из кода: решения, договорённости, текущие версии и открытые задачи.
 
-**Обновлено:** 2026-11-15 · **Версия:** 3.6.0 (Android 0.6.0-alpha)
+**Обновлено:** 2026-11-15 · **Версия:** 3.7.0 (Android 0.7.0-alpha)
 
-**Следующий шаг:** Phase 3b — pinch-zoom на Android-карте (Leaflet/WebView),
-Дека как full-height bottom sheet, экран «Карта» в нижней навигации. Перед кодом
-обновить `docs/design/phase3.html`. Полная история — `docs/CHRONICLE.md`.
+**Следующий шаг:** Phase 4 — плавающие обложки на сонаре, альбом в данных сигналов
+(`/api/signal` + БД), удаление откликов-«лайков» из PWA/пульта, полировка карты
+(кластеры, фильтр зон). Полная история — `docs/CHRONICLE.md`.
 
 ## Что это
 
@@ -24,10 +24,10 @@ SQLite, два веб-клиента (пульт и PWA-сонар), Android-к�
 
 | Компонент | Версия | Где |
 |---|---|---|
-| Сервер | 3.6.0 | `echo_server.py`, `SERVER_VERSION` |
-| Android | 0.6.0-alpha (versionCode 10) | `app/build.gradle.kts` |
+| Сервер | 3.7.0 | `echo_server.py`, `SERVER_VERSION` |
+| Android | 0.7.0-alpha (versionCode 11) | `app/build.gradle.kts` |
 | API | без изменений с 3.1.0 | `README.md`, таблица API |
-| Релизы | v3.6.0 (APK) | GitHub Releases |
+| Релизы | v3.7.0 (APK) | GitHub Releases |
 
 ## Как запускать
 
@@ -116,6 +116,8 @@ python tools/publish_release.py --tag vX.Y.Z --body-file notes.md
 - 3.6.0: убраны чипсы/лайки/BPM; списки по зонам, карточка «мой трек» с обложкой
   и альбомом, долгий тап играет трек соседа через audio focus; PWA pinch-zoom;
   макет `docs/design/phase3.html`.
+- 3.7.0: Android-карта с pinch/pan, Дека как full-height `ModalBottomSheet`,
+  навигация `Эфир / Карта / Отзвуки / Тайники`.
 
 ## Открытые задачи / идеи
 

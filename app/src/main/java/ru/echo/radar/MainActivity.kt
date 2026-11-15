@@ -3,6 +3,7 @@ package ru.echo.radar
 import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.graphics.Paint
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -16,6 +17,7 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -38,6 +40,7 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -83,7 +86,7 @@ object EchoTokens {
 // =============================================================
 enum class EchoScreen(val label: String) {
     ETHER("ЭФИР"),
-    DECK("ДЕКА"),
+    MAP("КАРТА"),
     ECHOES("ОТЗВУКИ"),
     CACHES("ТАЙНИКИ")
 }
@@ -288,6 +291,7 @@ fun EchoRadarTheme(content: @Composable () -> Unit) {
 // ROOT APPLICATION COMPOSABLE
 // =============================================================
 @OptIn(ExperimentalFoundationApi::class)
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EchoAppRoot() {
     val context = LocalContext.current
@@ -315,16 +319,19 @@ fun EchoAppRoot() {
     val isAudioPlaying by EchoAudioPlayer.isPlaying.collectAsState()
     val isAudioLoading by EchoAudioPlayer.isLoading.collectAsState()
 
-    // Текущий выбранный экран (ETHER, DECK, ECHOES, CACHES)
+    // Текущий выбранный экран (ETHER, MAP, ECHOES, CACHES)
     var currentScreen by remember { mutableStateOf(EchoScreen.ETHER) }
+    // Дека — full-height bottom sheet поверх любого экрана
+    var showDeckSheet by remember { mutableStateOf(false) }
+    BackHandler(enabled = showDeckSheet) { showDeckSheet = false }
 
     // Единый BottomSheet стейт
     var sheetState by remember { mutableStateOf<EchoSheetState>(EchoSheetState.None) }
 
-    // Тап по виджету «Сейчас играет» открывает ДЕКУ
+    // Тап по виджету «Сейчас играет» открывает Деку-шторку
     LaunchedEffect(openDeckRequest) {
         if (openDeckRequest) {
-            currentScreen = EchoScreen.DECK
+            showDeckSheet = true
             EchoStateRepository.consumeOpenDeckRequest()
         }
     }
@@ -402,9 +409,9 @@ fun EchoAppRoot() {
 
     // Непрерывный угол вращения винила
     var platterAngle by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(isAudioPlaying, currentScreen) {
+    LaunchedEffect(isAudioPlaying, currentScreen, showDeckSheet) {
         while (true) {
-            platterAngle = VinylRotationEngine.getContinuousAngle(isAudioPlaying || currentScreen == EchoScreen.DECK)
+            platterAngle = VinylRotationEngine.getContinuousAngle(isAudioPlaying || showDeckSheet)
             delay(16)
         }
     }
@@ -460,6 +467,87 @@ fun EchoAppRoot() {
         EchoStateRepository.dismissIncomingReaction()
     }
 
+    // Долгий тап по сигналу: свой звук на паузу, играем трек выбранного слушателя
+    val handleVinylLongPress: (VinylTrack) -> Unit = { vinyl ->
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        EchoSoundManager.triggerHeartbeatVibration(context)
+        EchoSoundManager.playNeedleDrop()
+        selectedVinyl = vinyl
+        EchoStateRepository.syncNeedle(vinyl.id)
+        EchoAudioPlayer.stop()
+        appScope.launch {
+            val targetMedia = AlbumArtResolver.getMediaInfo(vinyl.artist, vinyl.title, vinyl.coverUrl)
+            val preview = targetMedia.previewAudioUrl
+            if (!preview.isNullOrBlank()) {
+                EchoAudioPlayer.play("${vinyl.artist}::${vinyl.title}", preview)
+                feedbackMessage = "Слушаем ${vinyl.artist} — ${vinyl.title}"
+            } else {
+                feedbackMessage = "Превью недоступно — открываю плеер"
+                openMusicApp(context, vinyl.artist, vinyl.title, vinyl.sourceApp)
+            }
+        }
+    }
+
+    // Содержимое Деки: используется как full-height bottom sheet
+    val deckContent: @Composable () -> Unit = {
+        DeckScreen(
+            activeTrack = activeTrack,
+            mediaInfo = trackMediaInfo,
+            isSpinning = isAudioPlaying,
+            rotationAngle = { platterAngle },
+            isAudioPlaying = isAudioPlaying,
+            isAudioLoading = isAudioLoading,
+            isNeedleSynced = isNeedleSynced,
+            hasNotificationAccess = hasNotificationAccess,
+            onRequestNotificationAccess = { openNotificationAccess(context) },
+            onOpenYandexBroadcast = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                sheetState = EchoSheetState.YandexBroadcast
+            },
+            onMainPlayPauseToggle = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                EchoSoundManager.playNeedleDrop()
+                EchoAudioPlayer.toggle(activeTrack.artist, activeTrack.title, trackMediaInfo.previewAudioUrl)
+            },
+            onOpenCoverZoom = {
+                val url = activeTrack.coverUrl ?: trackMediaInfo.coverUrl
+                if (!url.isNullOrBlank()) {
+                    sheetState = EchoSheetState.CoverZoom(url, activeTrack.title, activeTrack.artist)
+                }
+            },
+            onOpenInMusicApp = {
+                if (activeTrack.artist.startsWith("Ожидание") ||
+                    activeTrack.title.startsWith("Включите")
+                ) {
+                    openYandexMusic(context)
+                } else {
+                    openMusicApp(context, activeTrack.artist, activeTrack.title, activeTrack.sourceApp)
+                }
+            },
+            onSyncNeedle = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                EchoSoundManager.triggerHeartbeatVibration(context)
+                EchoSoundManager.playNeedleDrop()
+                EchoStateRepository.syncNeedle(activeTrack.id)
+                feedbackMessage = "Слушаете вместе: трек синхронизирован"
+            },
+            onSendWaveImpulse = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                EchoSoundManager.playWavePulse()
+                EchoStateRepository.sendWaveImpulse(activeTrack.id)
+                feedbackMessage = "Импульс отправлен в эфир"
+            },
+            onSaveToChronicle = {
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                EchoSoundManager.playUnlockChime()
+                EchoChronicleManager.saveTrack(activeTrack)
+                feedbackMessage = "📜 Сохранено в вашу летопись"
+            },
+            onOpenCuratorStory = { sheetState = EchoSheetState.CuratorStory(activeTrack) },
+            onSelectSelf = { selectedVinyl = currentPlayingTrack.toVinylTrack() }
+        )
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -510,34 +598,7 @@ fun EchoAppRoot() {
                                     EchoSoundManager.playNeedleDrop()
                                     selectedVinyl = vinyl
                                 },
-                                onVinylLongClicked = { vinyl ->
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    EchoSoundManager.triggerHeartbeatVibration(context)
-                                    EchoSoundManager.playNeedleDrop()
-                                    selectedVinyl = vinyl
-                                    EchoStateRepository.syncNeedle(vinyl.id)
-                                    // Свой звук — на паузу: запрашиваем audio focus и
-                                    // запускаем превью именно выбранного сигнала.
-                                    EchoAudioPlayer.stop()
-                                    appScope.launch {
-                                        val targetMedia = AlbumArtResolver.getMediaInfo(
-                                            vinyl.artist,
-                                            vinyl.title,
-                                            vinyl.coverUrl
-                                        )
-                                        val preview = targetMedia.previewAudioUrl
-                                        if (!preview.isNullOrBlank()) {
-                                            EchoAudioPlayer.play(
-                                                "${vinyl.artist}::${vinyl.title}",
-                                                preview
-                                            )
-                                            feedbackMessage = "Слушаем ${vinyl.artist} — ${vinyl.title}"
-                                        } else {
-                                            feedbackMessage = "Превью недоступно — открываю плеер"
-                                            openMusicApp(context, vinyl.artist, vinyl.title, vinyl.sourceApp)
-                                        }
-                                    }
-                                },
+                                onVinylLongClicked = handleVinylLongPress,
                                 onMapLongPressed = { nx, ny ->
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     EchoSoundManager.triggerHeartbeatVibration(context)
@@ -559,7 +620,7 @@ fun EchoAppRoot() {
                                 },
                                 onOpenDeck = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    currentScreen = EchoScreen.DECK
+                                    showDeckSheet = true
                                 },
                                 onOpenServerSettings = {
                                     sheetState = EchoSheetState.ServerSettings
@@ -575,71 +636,14 @@ fun EchoAppRoot() {
                             )
                         }
 
-                        EchoScreen.DECK -> {
-                            DeckScreen(
-                                activeTrack = activeTrack,
-                                mediaInfo = trackMediaInfo,
-                                isSpinning = isAudioPlaying,
-                                rotationAngle = { platterAngle },
-                                isAudioPlaying = isAudioPlaying,
-                                isAudioLoading = isAudioLoading,
-                                isNeedleSynced = isNeedleSynced,
-                                hasNotificationAccess = hasNotificationAccess,
-                                onRequestNotificationAccess = { openNotificationAccess(context) },
-                                onOpenYandexBroadcast = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    sheetState = EchoSheetState.YandexBroadcast
+                        EchoScreen.MAP -> {
+                            MapScreen(
+                                allVinyls = allVinyls,
+                                onSelectVinyl = { vinyl ->
+                                    selectedVinyl = vinyl
+                                    showDeckSheet = true
                                 },
-                                onMainPlayPauseToggle = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    EchoSoundManager.playNeedleDrop()
-                                    EchoAudioPlayer.toggle(activeTrack.artist, activeTrack.title, trackMediaInfo.previewAudioUrl)
-                                },
-                                onOpenCoverZoom = {
-                                    val url = activeTrack.coverUrl ?: trackMediaInfo.coverUrl
-                                    if (!url.isNullOrBlank()) {
-                                        sheetState = EchoSheetState.CoverZoom(url, activeTrack.title, activeTrack.artist)
-                                    }
-                                },
-                                onOpenInMusicApp = {
-                                    if (activeTrack.artist.startsWith("Ожидание") ||
-                                        activeTrack.title.startsWith("Включите")
-                                    ) {
-                                        openYandexMusic(context)
-                                    } else {
-                                        openMusicApp(
-                                            context,
-                                            activeTrack.artist,
-                                            activeTrack.title,
-                                            activeTrack.sourceApp
-                                        )
-                                    }
-                                },
-                                onSyncNeedle = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    EchoSoundManager.triggerHeartbeatVibration(context)
-                                    EchoSoundManager.playNeedleDrop()
-                                    EchoStateRepository.syncNeedle(activeTrack.id)
-                                    feedbackMessage = "Слушаете вместе: трек синхронизирован"
-                                },
-                                onSendWaveImpulse = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    EchoSoundManager.playWavePulse()
-                                    EchoStateRepository.sendWaveImpulse(activeTrack.id)
-                                    feedbackMessage = "Импульс отправлен в эфир"
-                                },
-                                onSaveToChronicle = {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    EchoSoundManager.playUnlockChime()
-                                    EchoChronicleManager.saveTrack(activeTrack)
-                                    feedbackMessage = "📜 Сохранено в вашу летопись"
-                                },
-                                onOpenCuratorStory = {
-                                    sheetState = EchoSheetState.CuratorStory(activeTrack)
-                                },
-                                onSelectSelf = {
-                                    selectedVinyl = currentPlayingTrack.toVinylTrack()
-                                }
+                                onVinylLongClicked = handleVinylLongPress
                             )
                         }
 
@@ -648,7 +652,7 @@ fun EchoAppRoot() {
                                 allVinyls = allVinyls,
                                 onSelectVinyl = { vinyl ->
                                     selectedVinyl = vinyl
-                                    currentScreen = EchoScreen.DECK
+                                    showDeckSheet = true
                                 },
                                 onOpenInMusicApp = { track ->
                                     openMusicApp(context, track.artist, track.title, track.sourceApp)
@@ -685,6 +689,20 @@ fun EchoAppRoot() {
                     currentScreen = screen
                 }
             )
+        }
+
+        // Дека — full-height шторка поверх любого экрана
+        if (showDeckSheet) {
+            ModalBottomSheet(
+                onDismissRequest = { showDeckSheet = false },
+                sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                containerColor = EchoTokens.Background,
+                dragHandle = { BottomSheetDefaults.DragHandle(color = EchoTokens.Divider) }
+            ) {
+                Box(modifier = Modifier.fillMaxHeight(0.92f)) {
+                    deckContent()
+                }
+            }
         }
 
         // Входящий отклик из эфира — короткий баннер поверх любого экрана
@@ -786,7 +804,7 @@ fun EchoAppRoot() {
             onLoadToDeck = { track ->
                 selectedVinyl = track
                 sheetState = EchoSheetState.None
-                currentScreen = EchoScreen.DECK
+                showDeckSheet = true
             }
         )
     }
@@ -916,6 +934,174 @@ fun LiveEqualizer(active: Boolean) {
                 size = Size(barWidth, height),
                 cornerRadius = CornerRadius(barWidth / 2f)
             )
+        }
+    }
+}
+
+// =============================================================
+// SCREEN 01.5 — MAP / КАРТА (pinch-zoom, туман кварталов)
+// =============================================================
+@Composable
+fun MapScreen(
+    allVinyls: List<VinylTrack>,
+    onSelectVinyl: (VinylTrack) -> Unit,
+    onVinylLongClicked: (VinylTrack) -> Unit
+) {
+    var zoom by remember { mutableFloatStateOf(1f) }
+    var pan by remember { mutableStateOf(Offset.Zero) }
+    val labelPaint = remember {
+        Paint().apply {
+            isAntiAlias = true
+            color = android.graphics.Color.rgb(242, 245, 247)
+            textSize = 28f
+        }
+    }
+
+    fun pinPosition(vinyl: VinylTrack, canvasSize: Size): Offset {
+        val center = Offset(canvasSize.width / 2f, canvasSize.height / 2f)
+        val radians = Math.toRadians(vinyl.angleDeg.toDouble())
+        val radius = minOf(canvasSize.width, canvasSize.height) *
+            0.34f * vinyl.ringFactor.coerceIn(0.2f, 0.95f)
+        return center + pan + Offset(
+            (cos(radians).toFloat() * radius) * zoom,
+            (sin(radians).toFloat() * radius) * zoom
+        )
+    }
+
+    fun nearestAt(point: Offset, canvasSize: Size): VinylTrack? {
+        val threshold = 64f * zoom
+        return allVinyls
+            .minByOrNull { (pinPosition(it, canvasSize) - point).getDistance() }
+            ?.takeIf { (pinPosition(it, canvasSize) - point).getDistance() < threshold }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(EchoTokens.Background)
+    ) {
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, panChange, zoomChange, _ ->
+                        zoom = (zoom * zoomChange).coerceIn(1f, 4.5f)
+                        pan += panChange
+                    }
+                }
+                .pointerInput(allVinyls) {
+                    detectTapGestures(
+                        onTap = { tap ->
+                            val canvasSize = Size(size.width.toFloat(), size.height.toFloat())
+                            nearestAt(tap, canvasSize)?.let(onSelectVinyl)
+                        },
+                        onLongPress = { tap ->
+                            val canvasSize = Size(size.width.toFloat(), size.height.toFloat())
+                            nearestAt(tap, canvasSize)?.let(onVinylLongClicked)
+                        }
+                    )
+                }
+        ) {
+            val center = Offset(size.width / 2f, size.height / 2f)
+            val gridStep = 54f * zoom
+            var gx = (pan.x % gridStep + gridStep) % gridStep
+            while (gx < size.width) {
+                drawLine(EchoTokens.Divider.copy(alpha = 0.35f), Offset(gx, 0f), Offset(gx, size.height), 1.dp.toPx())
+                gx += gridStep
+            }
+            var gy = (pan.y % gridStep + gridStep) % gridStep
+            while (gy < size.height) {
+                drawLine(EchoTokens.Divider.copy(alpha = 0.35f), Offset(0f, gy), Offset(size.width, gy), 1.dp.toPx())
+                gy += gridStep
+            }
+            listOf(90f, 160f, 240f).forEach { radius ->
+                drawCircle(
+                    color = EchoTokens.Divider.copy(alpha = 0.30f),
+                    radius = radius * zoom,
+                    center = center + pan,
+                    style = Stroke(width = 1.dp.toPx())
+                )
+            }
+
+            allVinyls.forEach { vinyl ->
+                val point = pinPosition(vinyl, size)
+                val accent = Color(vinyl.colorHex)
+                drawCircle(accent.copy(alpha = 0.16f), 24f * zoom, point)
+                if (vinyl.isCapsule) {
+                    drawCircle(accent, 8f * zoom, point)
+                } else {
+                    drawRoundRect(
+                        color = accent.copy(alpha = 0.92f),
+                        topLeft = Offset(point.x - 15f * zoom, point.y - 15f * zoom),
+                        size = Size(30f * zoom, 30f * zoom),
+                        cornerRadius = CornerRadius(9f * zoom)
+                    )
+                    drawCircle(Color.White.copy(alpha = 0.9f), 2.5f * zoom, point)
+                }
+                labelPaint.textSize = 10.sp.toPx()
+                drawContext.canvas.nativeCanvas.drawText(
+                    vinyl.artist.take(12),
+                    point.x + 19f * zoom,
+                    point.y + 4f * zoom,
+                    labelPaint
+                )
+            }
+
+            drawCircle(EchoTokens.SignalCyan, 6f * zoom, center + pan)
+            drawCircle(
+                color = EchoTokens.SignalCyan.copy(alpha = 0.30f),
+                radius = 13f * zoom,
+                center = center + pan,
+                style = Stroke(width = 1.dp.toPx())
+            )
+        }
+
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 18.dp, vertical = 14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "КАРТА",
+                    color = EchoTokens.TextPrimary,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.5.sp
+                )
+                Text(
+                    text = "${allVinyls.size} СИГНАЛОВ",
+                    color = EchoTokens.TextSecondary,
+                    fontSize = 9.sp,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 1.sp
+                )
+            }
+            Text(
+                text = "СВЕДИТЕ ПАЛЬЦЫ, ЧТОБЫ ПРИБЛИЗИТЬ КВАРТАЛ",
+                color = EchoTokens.TextSecondary,
+                fontSize = 8.5.sp,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 1.sp
+            )
+            Spacer(modifier = Modifier.weight(1f))
+            Surface(
+                shape = RoundedCornerShape(50),
+                color = EchoTokens.Surface.copy(alpha = 0.88f),
+                border = BorderStroke(1.dp, EchoTokens.SkyBlue.copy(alpha = 0.30f)),
+                modifier = Modifier.align(Alignment.CenterHorizontally)
+            ) {
+                Text(
+                    text = "Долгий тап — слушать трек · ${(zoom * 10).toInt() / 10f}×",
+                    color = EchoTokens.TextSecondary,
+                    fontSize = 9.5.sp,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                )
+            }
         }
     }
 }
@@ -2577,7 +2763,7 @@ fun NavigationDock(
                         Box {
                             when (screen) {
                                 EchoScreen.ETHER -> NavEtherIcon(color = iconColor)
-                                EchoScreen.DECK -> NavDeckIcon(color = iconColor)
+                                EchoScreen.MAP -> NavMapIcon(color = iconColor)
                                 EchoScreen.ECHOES -> NavEchoesIcon(color = iconColor)
                                 EchoScreen.CACHES -> NavCachesIcon(color = iconColor)
                             }
@@ -2640,6 +2826,28 @@ fun NavDeckIcon(color: Color) {
         drawCircle(color = color, radius = radius, center = center, style = Stroke(width = 1.6.dp.toPx()))
         drawCircle(color = color.copy(alpha = 0.5f), radius = radius * 0.6f, center = center, style = Stroke(width = 1.dp.toPx()))
         drawCircle(color = color, radius = 2.dp.toPx(), center = center)
+    }
+}
+
+@Composable
+fun NavMapIcon(color: Color) {
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val w = size.width
+        val h = size.height
+        drawCircle(
+            color = color,
+            radius = w * 0.28f,
+            center = Offset(w / 2f, h * 0.36f),
+            style = Stroke(width = 1.6.dp.toPx())
+        )
+        drawLine(
+            color = color,
+            start = Offset(w / 2f, h * 0.60f),
+            end = Offset(w / 2f, h * 0.90f),
+            strokeWidth = 1.6.dp.toPx(),
+            cap = StrokeCap.Round
+        )
+        drawCircle(color = color, radius = 1.8.dp.toPx(), center = Offset(w / 2f, h * 0.36f))
     }
 }
 

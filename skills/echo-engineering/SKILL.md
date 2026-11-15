@@ -218,6 +218,11 @@ B_AB = 0.15·K + 0.10·T + 0.25·W + 0.15·M + 0.35·E
   (`AUDIOFOCUS_GAIN_TRANSIENT`) ставит Яндекс/VK на паузу. `EchoAudioPlayer.init(context)`
   вызывается в `MainActivity.onCreate`. PWA: `user-scalable=no` убран — Leaflet
   снова масштабируется пальцами.
+- **3.7.0 карта и шторка:** `EchoScreen.MAP` вместо `DECK`; `MapScreen` — Canvas
+  с `detectTransformGestures` (pinch/pan) и `detectTapGestures` (тап/долгий тап);
+  позиции сигналов из `angleDeg`/`ringFactor`, подписи через `nativeCanvas`.
+  Дека — `ModalBottomSheet(skipPartiallyExpanded=true)`, контент вынесен в
+  локальную `deckContent`; `BackHandler` закрывает шторку; виджет открывает её.
 
 ## Запуск и проверка
 
