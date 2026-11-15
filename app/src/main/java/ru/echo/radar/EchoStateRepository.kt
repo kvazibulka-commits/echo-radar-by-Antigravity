@@ -605,7 +605,7 @@ object EchoStateRepository {
                     lastHandledBannerId = bannerId
                     _incomingReaction.value = IncomingReaction(
                         id = bannerId,
-                        symbol = bannerObj.optString("symbol", "✦"),
+                        symbol = bannerObj.optString("symbol", "•"),
                         senderId = senderId.ifBlank { "Слушатель" },
                         message = bannerObj.optString("message", "Вам отправлен импульс"),
                         timestamp = bannerObj.optLong("time", System.currentTimeMillis())
@@ -623,7 +623,7 @@ object EchoStateRepository {
                         EchoReactionRecord(
                             id = item.optLong("id", 0L),
                             senderId = item.optString("senderId", "Слушатель"),
-                            symbol = item.optString("symbol", "✦"),
+                            symbol = item.optString("symbol", "•"),
                             message = item.optString("message", "Спасибо за созвучие"),
                             timeSec = item.optLong("time", System.currentTimeMillis() / 1000)
                         )
