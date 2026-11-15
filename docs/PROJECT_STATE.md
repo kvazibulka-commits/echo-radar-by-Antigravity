@@ -5,12 +5,12 @@
 > `skills/*/SKILL.md` и `CHANGELOG.md`. Здесь зафиксировано то, что нельзя
 > восстановить из кода: решения, договорённости, текущие версии и открытые задачи.
 
-**Обновлено:** 2026-11-15 · **Версия:** 3.4.0 (Android 0.4.0-alpha)
+**Обновлено:** 2026-11-15 · **Версия:** 3.5.0 (Android 0.5.0-alpha)
 
-**Следующий шаг:** Phase 2 — экран «Карта» (Leaflet в WebView), навигация
-`Эфир / Карта / Отзвуки / Тайники`, Дека как full-height bottom sheet и компактная
-строка «сейчас играет». Перед кодом — `docs/design/phase2.html`. Полная история
-и правила ведения — в `docs/CHRONICLE.md`.
+**Следующий шаг:** Phase 2b — плавающие обложки на радаре (Around Music), Дека как
+full-height bottom sheet (MD Vinyl/Spotify), затем экран «Карта» и навигация
+`Эфир / Карта / Отзвуки / Тайники`. Перед кодом — обновить `docs/design/phase2.html`.
+Полная история и правила ведения — в `docs/CHRONICLE.md`.
 
 ## Что это
 
@@ -25,10 +25,10 @@ SQLite, два веб-клиента (пульт и PWA-сонар), Android-к�
 
 | Компонент | Версия | Где |
 |---|---|---|
-| Сервер | 3.4.0 | `echo_server.py`, `SERVER_VERSION` |
-| Android | 0.4.0-alpha (versionCode 8) | `app/build.gradle.kts` |
+| Сервер | 3.5.0 | `echo_server.py`, `SERVER_VERSION` |
+| Android | 0.5.0-alpha (versionCode 9) | `app/build.gradle.kts` |
 | API | без изменений с 3.1.0 | `README.md`, таблица API |
-| Релизы | v3.4.0 (APK) | GitHub Releases |
+| Релизы | v3.5.0 (APK) | GitHub Releases |
 
 ## Как запускать
 
@@ -112,6 +112,8 @@ python tools/publish_release.py --tag vX.Y.Z --body-file notes.md
 - 3.4.0: Phase 1 дизайна — убран мини-плеер, упрощена Дека, генеративные аватары,
   радиусы и B2B в «Тайниках», склонения, фильтр видео/пабликов. Визуализация:
   `docs/design/phase1.html` + `phase1.png`.
+- 3.5.0: конкурентный анализ `docs/design/COMPETITIVE_UI.md`; mesh-фон от трека,
+  строка «сейчас играет» с эквалайзером, реакции-чипсы; макет `phase2.html`.
 
 ## Открытые задачи / идеи
 

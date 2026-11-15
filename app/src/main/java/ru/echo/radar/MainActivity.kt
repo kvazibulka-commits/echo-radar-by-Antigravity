@@ -26,7 +26,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
@@ -129,7 +131,8 @@ data class VinylTrack(
     val bpm: Int = 120,
     val camelotKey: String = "8A",
     val genre: String = "indie",
-    val avatarPetals: Int = 6
+    val avatarPetals: Int = 6,
+    val reactions: Map<String, Int> = emptyMap()
 )
 
 fun PlayingTrack.toVinylTrack(): VinylTrack = VinylTrack(
@@ -169,7 +172,8 @@ fun NearbyEchoSignal.toVinylTrack(): VinylTrack = VinylTrack(
     bpm = bpm,
     camelotKey = camelotKey,
     genre = genre,
-    avatarPetals = avatarPetals
+    avatarPetals = avatarPetals,
+    reactions = reactions
 )
 
 fun EchoCapsule.toVinylTrack(): VinylTrack = VinylTrack(
@@ -474,6 +478,8 @@ fun EchoAppRoot() {
                             EtherScreen(
                                 allVinyls = allVinyls,
                                 selectedVinyl = selectedVinyl,
+                                activeTrack = activeTrack,
+                                isPlaying = isAudioPlaying,
                                 thermalPatches = thermalPatches,
                                 needleSyncedTargets = needleSyncedTargets,
                                 lagrangePoint = lagrangePoint,
@@ -752,12 +758,99 @@ fun EchoAppRoot() {
 }
 
 // =============================================================
+// NOW PLAYING STRIP + LIVE EQUALIZER (Shazam / Airbuds pattern)
+// =============================================================
+@Composable
+fun NowPlayingStrip(
+    title: String,
+    artist: String,
+    isPlaying: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = EchoTokens.Surface.copy(alpha = 0.82f),
+        border = BorderStroke(1.dp, EchoTokens.SkyBlue.copy(alpha = 0.28f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 4.dp)
+            .height(46.dp)
+            .clickable { onClick() }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 11.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(9.dp)
+        ) {
+            LiveEqualizer(active = isPlaying)
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    color = EchoTokens.TextPrimary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = artist,
+                    color = EchoTokens.TextSecondary,
+                    fontSize = 9.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Text(
+                text = if (isPlaying) "LIVE" else "ПАУЗА",
+                color = if (isPlaying) EchoTokens.SignalCyan else EchoTokens.TextSecondary,
+                fontSize = 8.5.sp,
+                fontFamily = FontFamily.Monospace,
+                letterSpacing = 1.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
+}
+
+@Composable
+fun LiveEqualizer(active: Boolean) {
+    val transition = rememberInfiniteTransition(label = "echo_eq")
+    val phase by transition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "echo_eq_phase"
+    )
+    Canvas(modifier = Modifier.size(22.dp)) {
+        val bars = 5
+        val barWidth = size.width / (bars * 2f)
+        for (i in 0 until bars) {
+            val wave = ((sin(((phase + i * 0.16f) * PI)) + 1.0) / 2.0).toFloat()
+            val height = size.height * if (active) (0.28f + 0.62f * wave) else 0.22f
+            drawRoundRect(
+                color = EchoTokens.SignalCyan,
+                topLeft = Offset(i * barWidth * 2f, size.height - height),
+                size = Size(barWidth, height),
+                cornerRadius = CornerRadius(barWidth / 2f)
+            )
+        }
+    }
+}
+
+// =============================================================
 // SCREEN 01 — ETHER / ЭФИР (СОНАР И КАРТА ПРИСУТСТВИЯ)
 // =============================================================
 @Composable
 fun EtherScreen(
     allVinyls: List<VinylTrack>,
     selectedVinyl: VinylTrack?,
+    activeTrack: VinylTrack,
+    isPlaying: Boolean,
     thermalPatches: List<ThermalPatch>,
     needleSyncedTargets: Set<String>,
     lagrangePoint: LagrangePointInfo?,
@@ -777,7 +870,28 @@ fun EtherScreen(
     onOpenServerSettings: () -> Unit,
     onRequestPermission: () -> Unit
 ) {
-    Column(modifier = Modifier.fillMaxSize()) {
+    val meshAccent = selectedVinyl?.let { Color(it.colorHex) } ?: Color(activeTrack.colorHex)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .drawBehind {
+                // Mesh-фон от цвета выбранного трека (Around Music / Endel)
+                drawRect(
+                    Brush.radialGradient(
+                        colors = listOf(meshAccent.copy(alpha = 0.16f), Color.Transparent),
+                        center = Offset(size.width * 0.18f, size.height * 0.10f),
+                        radius = size.width * 1.10f
+                    )
+                )
+                drawRect(
+                    Brush.radialGradient(
+                        colors = listOf(EchoTokens.PurpleResonance.copy(alpha = 0.10f), Color.Transparent),
+                        center = Offset(size.width * 0.90f, size.height * 0.35f),
+                        radius = size.width * 0.85f
+                    )
+                )
+            }
+    ) {
         // Header
         Row(
             modifier = Modifier
@@ -873,6 +987,16 @@ fun EtherScreen(
                     }
                 }
             }
+        }
+
+        // Строка «сейчас играет»: эквалайзер + трек + LIVE (Shazam/Airbuds)
+        if (!activeTrack.artist.startsWith("Ожидание") && activeTrack.title.isNotBlank()) {
+            NowPlayingStrip(
+                title = activeTrack.title,
+                artist = activeTrack.artist,
+                isPlaying = isPlaying,
+                onClick = onOpenDeck
+            )
         }
 
         // Подсказка о разрешениях (если не выданы)
@@ -1062,6 +1186,23 @@ fun DeckScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .drawBehind {
+                val accent = if (isWaitingForMusic) EchoTokens.SignalCyan else Color(activeTrack.colorHex)
+                drawRect(
+                    Brush.radialGradient(
+                        colors = listOf(accent.copy(alpha = 0.18f), Color.Transparent),
+                        center = Offset(size.width * 0.50f, size.height * 0.18f),
+                        radius = size.width * 1.05f
+                    )
+                )
+                drawRect(
+                    Brush.radialGradient(
+                        colors = listOf(EchoTokens.PurpleResonance.copy(alpha = 0.10f), Color.Transparent),
+                        center = Offset(size.width * 0.92f, size.height * 0.55f),
+                        radius = size.width * 0.85f
+                    )
+                )
+            }
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -1703,6 +1844,27 @@ fun EchoesScreen(
                                             color = EchoTokens.TextSecondary,
                                             fontSize = 10.sp
                                         )
+                                        if (vinyl.reactions.isNotEmpty()) {
+                                            Row(
+                                                modifier = Modifier.padding(top = 3.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                vinyl.reactions.entries
+                                                    .sortedByDescending { it.value }
+                                                    .take(3)
+                                                    .forEach { (symbol, count) ->
+                                                        Text(
+                                                            text = "$symbol $count",
+                                                            color = EchoTokens.TextSecondary,
+                                                            fontSize = 9.sp,
+                                                            modifier = Modifier
+                                                                .clip(RoundedCornerShape(6.dp))
+                                                                .background(EchoTokens.SurfaceElevated)
+                                                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                            }
+                                        }
                                     }
 
                                     Text(

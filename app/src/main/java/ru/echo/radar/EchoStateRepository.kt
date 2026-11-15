@@ -45,7 +45,8 @@ data class NearbyEchoSignal(
     val bpm: Int = 120,
     val camelotKey: String = "8A",
     val genre: String = "indie",
-    val avatarPetals: Int = 6
+    val avatarPetals: Int = 6,
+    val reactions: Map<String, Int> = emptyMap()
 )
 
 data class ThermalPatch(
@@ -512,7 +513,15 @@ object EchoStateRepository {
                             bpm = s.optInt("bpm", 120),
                             camelotKey = s.optString("camelotKey", "8A"),
                             genre = s.optString("genre", "indie"),
-                            avatarPetals = s.optInt("avatarPetals", 6)
+                            avatarPetals = s.optInt("avatarPetals", 6),
+                            reactions = buildMap {
+                                val reactionsObj = s.optJSONObject("reactions")
+                                if (reactionsObj != null) {
+                                    reactionsObj.keys().forEach { key ->
+                                        put(key, reactionsObj.optInt(key, 0))
+                                    }
+                                }
+                            }
                         )
                     )
                 }

@@ -208,6 +208,10 @@ B_AB = 0.15·K + 0.10·T + 0.25·W + 0.15·M + 0.35·E
 - Фильтр мусора: видео-расширения, числовые ID файлов, Mash/Топор/«прямой эфир»,
   голосовые и видеосообщения — и на сервере, и в `EchoMediaListenerService`.
 - Визуализация до правок: `docs/design/phase1.html` + `phase1.png`.
+- **3.5.0 Ambient UI:** `NearbyEchoSignal.reactions` парсится из `signals[].reactions`;
+  mesh-фон — `drawBehind` на Ether/Deck; строка «сейчас играет» — `NowPlayingStrip`
+  + `LiveEqualizer`; конкурентный анализ — `docs/design/COMPETITIVE_UI.md`,
+  макет — `docs/design/phase2.html`.
 
 ## Запуск и проверка
 
