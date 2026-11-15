@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ЭХО · Phase 3 — списки, мой трек, карта</title>
+<style>
+  :root {
+    --bg:#07090E; --surface:#0D121B; --elevated:#151E2A; --line:#26313E; --line2:#334155;
+    --text:#F2F5F7; --muted:#85909E; --dim:#64748B;
+    --cyan:#00F0FF; --sky:#38BDF8; --amber:#FFB800; --gold:#FFD700;
+    --violet:#A855F7; --green:#34D399; --red:#FF5533;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;padding:30px 26px 50px;background:radial-gradient(900px 480px at 12% -8%,rgba(56,189,248,.10),transparent 60%),radial-gradient(800px 460px at 92% 0%,rgba(168,85,247,.10),transparent 60%),var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+  .head{max-width:1520px;margin:0 auto 22px;display:flex;justify-content:space-between;align-items:flex-end;gap:18px;flex-wrap:wrap}
+  .title{font-size:24px;font-weight:900;letter-spacing:3px;color:var(--cyan)}
+  .sub{color:var(--muted);font-size:12.5px;margin-top:4px;max-width:850px;line-height:1.5}
+  .badge{font-family:ui-monospace,Consolas,monospace;font-size:10px;letter-spacing:1px;color:var(--dim);border:1px solid var(--line2);border-radius:999px;padding:6px 11px}
+  .stage{max-width:1520px;margin:0 auto;display:flex;gap:24px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+  .col{width:392px}
+  .label{font-family:ui-monospace,Consolas,monospace;font-size:10px;letter-spacing:1.4px;color:var(--dim);margin-bottom:8px}
+  .phone{width:390px;height:820px;border-radius:34px;border:1px solid #1B2637;background:var(--bg);box-shadow:0 30px 80px rgba(0,0,0,.55),inset 0 0 0 6px #05070B;overflow:hidden;display:flex;flex-direction:column;position:relative}
+  .statusbar{height:26px;display:flex;justify-content:space-between;align-items:center;padding:0 16px;color:var(--muted);font-size:9px;font-family:ui-monospace,monospace;flex:none;z-index:5}
+  .screen{flex:1;overflow:hidden;position:relative}
+  .scene{position:absolute;inset:0;padding:0 18px;display:flex;flex-direction:column}
+  .mesh{position:absolute;inset:0;z-index:0;background:radial-gradient(420px 300px at 18% 10%,rgba(0,240,255,.15),transparent 60%),radial-gradient(380px 320px at 88% 28%,rgba(168,85,247,.16),transparent 62%),radial-gradient(500px 360px at 50% 100%,rgba(56,189,248,.10),transparent 60%)}
+  .content{position:relative;z-index:2;display:flex;flex-direction:column;height:100%;padding-top:4px}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .h1{font-size:20px;font-weight:800;letter-spacing:1.5px}
+  .h2{font-family:ui-monospace,monospace;font-size:8.5px;color:var(--muted);letter-spacing:1px;margin-top:2px}
+  .iconbtn{width:34px;height:34px;border-radius:11px;border:1px solid var(--line);background:var(--surface);color:var(--sky);display:flex;align-items:center;justify-content:center;font-size:14px}
+
+  /* My track card */
+  .mine{margin-top:9px;border-radius:18px;border:1px solid rgba(56,189,248,.30);background:rgba(13,18,27,.86);padding:10px;display:flex;gap:10px;align-items:center;backdrop-filter:blur(12px);position:relative;overflow:hidden}
+  .mine::before{content:"";position:absolute;inset:0;background:linear-gradient(120deg,rgba(0,240,255,.10),transparent 45%,rgba(168,85,247,.10));pointer-events:none}
+  .cover{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,#0e7490,#22d3ee 55%,#a5f3fc);flex:none;box-shadow:0 8px 20px rgba(0,0,0,.45);position:relative;z-index:1}
+  .mine-body{flex:1;min-width:0;position:relative;z-index:1}
+  .src{font-family:ui-monospace,monospace;font-size:8px;letter-spacing:1px;color:var(--cyan)}
+  .mt{font-size:13.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ma{font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mg{font-size:9.5px;color:var(--sky);margin-top:1px}
+  .mine-side{display:flex;flex-direction:column;align-items:center;gap:5px;position:relative;z-index:1}
+  .eq{width:20px;height:20px;display:flex;align-items:flex-end;gap:2px}
+  .eq i{width:3px;border-radius:2px;background:var(--cyan);animation:eq 1.1s ease-in-out infinite}
+  .eq i:nth-child(1){height:7px;animation-delay:.0s}.eq i:nth-child(2){height:15px;animation-delay:.15s}.eq i:nth-child(3){height:10px;animation-delay:.3s}.eq i:nth-child(4){height:18px;animation-delay:.45s}.eq i:nth-child(5){height:6px;animation-delay:.6s}
+  @keyframes eq{0%,100%{transform:scaleY(.45)}50%{transform:scaleY(1)}}
+  .pause{width:28px;height:28px;border-radius:50%;border:1px solid var(--line2);background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:10px;color:var(--text)}
+
+  /* Radar */
+  .radar{position:relative;flex:1;min-height:250px;margin-top:4px}
+  .ring{position:absolute;left:50%;top:50%;border-radius:50%;border:1px solid rgba(56,189,248,.18);transform:translate(-50%,-50%)}
+  .r1{width:280px;height:280px}.r2{width:200px;height:200px}.r3{width:124px;height:124px}.r4{width:56px;height:56px}
+  .beam{position:absolute;left:50%;top:50%;width:140px;height:1.5px;transform-origin:left center;transform:rotate(-38deg);background:linear-gradient(90deg,rgba(0,240,255,.6),transparent)}
+  .me{position:absolute;left:50%;top:50%;width:9px;height:9px;transform:translate(-50%,-50%);border-radius:50%;background:var(--cyan);box-shadow:0 0 16px var(--cyan)}
+  .node{position:absolute;width:38px;height:38px;border-radius:11px;box-shadow:0 8px 20px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.10);display:flex;align-items:flex-end;padding:4px;font-size:7px;font-weight:800;color:#fff;text-shadow:0 1px 3px #000}
+  .n1{left:20%;top:18%;background:linear-gradient(135deg,#0e7490,#22d3ee)}
+  .n2{right:16%;top:26%;background:linear-gradient(135deg,#4c1d95,#a855f7)}
+  .n3{left:18%;bottom:18%;background:linear-gradient(135deg,#7c2d12,#f59e0b)}
+  .n4{right:20%;bottom:14%;background:linear-gradient(135deg,#064e3b,#10b981);opacity:.55}
+
+  /* Grouped list */
+  .list-title{font-family:ui-monospace,monospace;font-size:9px;letter-spacing:1px;color:var(--dim);margin:6px 0 4px}
+  .row{display:flex;gap:9px;align-items:center;background:rgba(13,18,27,.78);border:1px solid var(--line);border-radius:13px;padding:8px;margin-bottom:6px}
+  .avat{width:38px;height:38px;border-radius:50%;flex:none;background:radial-gradient(circle at 50% 45%,rgba(0,240,255,.18),#0B1325 70%);border:1px solid rgba(0,240,255,.22);position:relative}
+  .avat b{position:absolute;left:50%;top:50%;width:11px;height:11px;transform:translate(-50%,-50%);border-radius:50%;background:var(--acc,var(--cyan));opacity:.85}
+  .rb{flex:1;min-width:0}
+  .p{font-size:9.5px;font-weight:800;color:var(--acc,var(--cyan));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .t{font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .a{font-size:9.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta{font-size:8.5px;color:var(--dim);margin-top:1px}
+  .arrow{color:var(--cyan);font-size:13px;flex:none}
+
+  .nav{height:62px;border-top:1px solid var(--line);background:rgba(13,18,27,.92);display:flex;align-items:center;justify-content:space-around;flex:none;z-index:6}
+  .nav div{text-align:center;font-size:10px;color:#788695}
+  .nav .on{color:var(--cyan);font-weight:800}
+  .nav .ico{width:20px;height:20px;margin:0 auto 3px;border-radius:50%;border:1.5px solid currentColor;opacity:.9}
+
+  /* Echoes */
+  .seg{display:flex;background:var(--surface);border-radius:14px;padding:3px;margin:8px 0 6px;gap:3px}
+  .seg div{flex:1;text-align:center;font-size:9.5px;font-weight:700;color:var(--dim);padding:7px 0;border-radius:11px}
+  .seg .on{background:rgba(0,240,255,.14);color:var(--cyan)}
+
+  /* Map */
+  .map{position:absolute;inset:0;background:radial-gradient(400px 300px at 30% 35%,rgba(56,189,248,.06),transparent 60%),radial-gradient(420px 320px at 75% 65%,rgba(168,85,247,.06),transparent 60%),#080C14}
+  .grid{position:absolute;inset:0;opacity:.32;background-image:linear-gradient(rgba(56,189,248,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(56,189,248,.08) 1px,transparent 1px);background-size:38px 38px}
+  .fog{position:absolute;border-radius:50%;filter:blur(18px)}
+  .zone{position:absolute;left:18px;top:14px;z-index:4;display:flex;gap:6px}
+  .zone span{font-size:9px;color:var(--muted);border:1px solid var(--line2);background:rgba(13,18,27,.85);border-radius:999px;padding:5px 9px}
+  .zone .on{color:var(--cyan);border-color:rgba(0,240,255,.4)}
+  .pin{position:absolute;width:38px;height:38px;border-radius:11px;z-index:3;box-shadow:0 8px 20px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.12);display:flex;align-items:flex-end;padding:4px;font-size:7px;font-weight:800;color:#fff;text-shadow:0 1px 3px #000}
+  .pin.p1{left:26%;top:34%;background:linear-gradient(135deg,#0e7490,#22d3ee)}
+  .pin.p2{left:64%;top:26%;background:linear-gradient(135deg,#4c1d95,#a855f7)}
+  .pin.p3{left:44%;top:60%;background:linear-gradient(135deg,#7c2d12,#f59e0b)}
+  .pin.p4{left:72%;top:66%;background:linear-gradient(135deg,#064e3b,#10b981);opacity:.55}
+  .venue{position:absolute;left:24%;top:67%;width:14px;height:14px;border-radius:4px;background:var(--sky);box-shadow:0 0 14px var(--sky);z-index:3;transform:rotate(45deg)}
+  .pinch{position:absolute;left:50%;bottom:84px;transform:translateX(-50%);z-index:4;border-radius:999px;border:1px solid rgba(56,189,248,.3);background:rgba(13,18,27,.9);padding:7px 12px;font-size:9.5px;color:var(--muted);display:flex;gap:7px;align-items:center;white-space:nowrap}
+  .pinch b{color:var(--cyan);font-size:14px;letter-spacing:-2px}
+
+  .foot{max-width:1520px;margin:22px auto 0;color:var(--dim);font-size:10.5px;font-family:ui-monospace,monospace;letter-spacing:.4px}
+</style>
+</head>
+<body>
+  <div class="head">
+    <div>
+      <div class="title">ЭХО · PHASE 3</div>
+      <div class="sub">Без квадратных чипсов и «лайков»: люди группируются по зонам списками. На главном — карточка «что играет у меня» с обложкой, источником, артистом, альбомом, треком и жанром. BPM убран. Карта масштабируется пальцами. Долгий тап по узлу запускает трек соседа.</div>
+    </div>
+    <div class="badge">390 × 820 · grouped lists · my track · pinch map</div>
+  </div>
+
+  <div class="stage">
+    <!-- ETHER / MY TRACK -->
+    <div class="col">
+      <div class="label">01 · ЭФИР — мой трек и списки зон</div>
+      <div class="phone">
+        <div class="statusbar"><span>22:10</span><span>◐ 24%</span></div>
+        <div class="screen">
+          <div class="mesh"></div>
+          <div class="scene"><div class="content">
+            <div class="top">
+              <div><div class="h1">ЭХО</div><div class="h2">МУЗЫКАЛЬНЫЙ СОНАР · 4 СИГНАЛА</div></div>
+              <div class="iconbtn">⚙</div>
+            </div>
+
+            <div class="mine">
+              <div class="cover"></div>
+              <div class="mine-body">
+                <div class="src">ЯНДЕКС МУЗЫКА · ПЕРЕХВАТ</div>
+                <div class="mt">Спокойная ночь</div>
+                <div class="ma">Кино · «Группа крови»</div>
+                <div class="mg">Пост-панк</div>
+              </div>
+              <div class="mine-side">
+                <div class="eq"><i></i><i></i><i></i><i></i><i></i></div>
+                <div class="pause">❚❚</div>
+              </div>
+            </div>
+
+            <div class="radar">
+              <div class="ring r1"></div><div class="ring r2"></div><div class="ring r3"></div><div class="ring r4"></div>
+              <div class="beam"></div>
+              <div class="node n1">Pompeya</div>
+              <div class="node n2">Молчат<br>Дома</div>
+              <div class="node n3">Sirotkin</div>
+              <div class="node n4">Timecop</div>
+              <div class="me"></div>
+            </div>
+
+            <div class="list-title">РЯДОМ · 4</div>
+            <div class="row" style="--acc:#00F0FF"><div class="avat"><b></b></div><div class="rb"><div class="p">Ловец виниловых волн</div><div class="t">Pompeya — 90</div><div class="a">Инди · Парк Горького</div><div class="meta">~74 м · 81% резонанс</div></div><div class="arrow">→</div></div>
+            <div class="row" style="--acc:#A855F7"><div class="avat"><b></b></div><div class="rb"><div class="p">Пилигрим неоновых панелек</div><div class="t">Молчат Дома — Судно</div><div class="a">Пост-панк · Сретенка</div><div class="meta">~120 м · 88% резонанс</div></div><div class="arrow">→</div></div>
+          </div></div>
+        </div>
+        <div class="nav"><div class="on"><div class="ico"></div>ЭФИР</div><div><div class="ico"></div>КАРТА</div><div><div class="ico"></div>ОТЗВУКИ</div><div><div class="ico"></div>ТАЙНИКИ</div></div>
+      </div>
+    </div>
+
+    <!-- ECHOES GROUPED -->
+    <div class="col">
+      <div class="label">02 · ОТЗВУКИ — группировка по зонам</div>
+      <div class="phone">
+        <div class="statusbar"><span>22:10</span><span>◐ 24%</span></div>
+        <div class="screen">
+          <div class="mesh"></div>
+          <div class="scene"><div class="content">
+            <div class="top"><div><div class="h1">ОТЗВУКИ</div><div class="h2">АРХИВ СОЗВУЧИЙ И ЭФИР ВОКРУГ</div></div></div>
+            <div class="seg"><div class="on">Эфир (4)</div><div>Сохранено</div><div>Волны</div><div>Истории</div></div>
+
+            <div class="list-title">СРЕТЕНКА · КАМЕРНЫЕ БАРЫ · 2</div>
+            <div class="row" style="--acc:#A855F7"><div class="avat"><b></b></div><div class="rb"><div class="p">Пилигрим неоновых панелек</div><div class="t">Молчат Дома — Судно</div><div class="a">Пост-панк · «Этажи»</div><div class="meta">~120 м · 88% резонанс</div></div><div class="arrow">→</div></div>
+            <div class="row" style="--acc:#38BDF8"><div class="avat"><b></b></div><div class="rb"><div class="p">Архивариус забытых кассет</div><div class="t">Sirotkin — Август</div><div class="a">Инди · «Август»</div><div class="meta">~52 м · 94% резонанс</div></div><div class="arrow">→</div></div>
+
+            <div class="list-title">ПАРК ГОРЬКОГО · НАБЕРЕЖНАЯ · 2</div>
+            <div class="row" style="--acc:#34D399"><div class="avat"><b></b></div><div class="rb"><div class="p">Ловец виниловых волн</div><div class="t">Pompeya — 90</div><div class="a">Инди · «Real»</div><div class="meta">~74 м · 81% резонанс</div></div><div class="arrow">→</div></div>
+            <div class="row" style="--acc:#FFB800;opacity:.7"><div class="avat"><b></b></div><div class="rb"><div class="p">Странник сонных набережных</div><div class="t">Timecop1983 — On the Run</div><div class="a">Synthwave · «Nightdrive»</div><div class="meta">призрачный след · 17 мин</div></div><div class="arrow">→</div></div>
+          </div></div>
+        </div>
+        <div class="nav"><div><div class="ico"></div>ЭФИР</div><div><div class="ico"></div>КАРТА</div><div class="on"><div class="ico"></div>ОТЗВУКИ</div><div><div class="ico"></div>ТАЙНИКИ</div></div>
+      </div>
+    </div>
+
+    <!-- MAP PINCH -->
+    <div class="col">
+      <div class="label">03 · КАРТА — pinch-zoom</div>
+      <div class="phone">
+        <div class="statusbar"><span>22:10</span><span>◐ 24%</span></div>
+        <div class="screen">
+          <div class="map"><div class="grid"></div>
+            <div class="fog" style="left:8%;top:20%;width:220px;height:220px;background:rgba(0,240,255,.10)"></div>
+            <div class="fog" style="right:0%;top:48%;width:240px;height:240px;background:rgba(168,85,247,.10)"></div>
+            <div class="fog" style="left:26%;bottom:4%;width:210px;height:210px;background:rgba(255,184,0,.08)"></div>
+            <div class="zone"><span>Все</span><span class="on">Сретенка</span><span>Парк</span></div>
+            <div class="pin p1">Pompeya</div><div class="pin p2">Молчат<br>Дома</div><div class="pin p3">Sirotkin</div><div class="pin p4">Timecop</div>
+            <div class="venue"></div>
+            <div class="pinch"><b>⌄⌃</b> Сведите или разведите пальцы</div>
+          </div>
+        </div>
+        <div class="nav"><div><div class="ico"></div>ЭФИР</div><div class="on"><div class="ico"></div>КАРТА</div><div><div class="ico"></div>ОТЗВУКИ</div><div><div class="ico"></div>ТАЙНИКИ</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">Phase 3: без BPM · без звёздочек/огоньков · списки по зонам · обложка/артист/альбом/трек/жанр · долгий тап = играть трек соседа · карта pinch-zoom.</div>
+</body>
+</html>

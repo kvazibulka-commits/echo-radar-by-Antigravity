@@ -132,6 +132,8 @@ data class VinylTrack(
     val camelotKey: String = "8A",
     val genre: String = "indie",
     val avatarPetals: Int = 6,
+    val zoneName: String = "Вечерняя улица",
+    val album: String = "",
     val reactions: Map<String, Int> = emptyMap()
 )
 
@@ -173,6 +175,8 @@ fun NearbyEchoSignal.toVinylTrack(): VinylTrack = VinylTrack(
     camelotKey = camelotKey,
     genre = genre,
     avatarPetals = avatarPetals,
+    zoneName = zoneName,
+    album = album,
     reactions = reactions
 )
 
@@ -194,7 +198,8 @@ fun EchoCapsule.toVinylTrack(): VinylTrack = VinylTrack(
     venueName = venueName,
     minResonance = minResonance,
     secretPerk = secretPerk,
-    isUnlocked = isUnlocked
+    isUnlocked = isUnlocked,
+    zoneName = zoneName
 )
 
 // =============================================================
@@ -209,6 +214,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         EchoStateRepository.init(this)
         EchoSoundManager.init(this)
+        EchoAudioPlayer.init(this)
         EchoChronicleManager.init(this)
         EchoBleManager.init(this)
         EchoBleManager.startScanning(this)
@@ -286,6 +292,7 @@ fun EchoRadarTheme(content: @Composable () -> Unit) {
 fun EchoAppRoot() {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val appScope = rememberCoroutineScope()
 
     // Общие глобальные источники данных (Single Source of Truth)
     val currentPlayingTrack by EchoStateRepository.currentTrack.collectAsState()
@@ -480,6 +487,15 @@ fun EchoAppRoot() {
                                 selectedVinyl = selectedVinyl,
                                 activeTrack = activeTrack,
                                 isPlaying = isAudioPlaying,
+                                nowCoverUrl = trackMediaInfo.coverUrl ?: activeTrack.coverUrl,
+                                nowAlbum = trackMediaInfo.albumName ?: "",
+                                onToggleNowPlaying = {
+                                    EchoAudioPlayer.toggle(
+                                        activeTrack.artist,
+                                        activeTrack.title,
+                                        trackMediaInfo.previewAudioUrl
+                                    )
+                                },
                                 thermalPatches = thermalPatches,
                                 needleSyncedTargets = needleSyncedTargets,
                                 lagrangePoint = lagrangePoint,
@@ -500,15 +516,34 @@ fun EchoAppRoot() {
                                     EchoSoundManager.playNeedleDrop()
                                     selectedVinyl = vinyl
                                     EchoStateRepository.syncNeedle(vinyl.id)
-                                    EchoAudioPlayer.toggle(vinyl.artist, vinyl.title, trackMediaInfo.previewAudioUrl)
-                                    feedbackMessage = "🪡 Слушаете вместе с ${vinyl.artist} ✨"
+                                    // Свой звук — на паузу: запрашиваем audio focus и
+                                    // запускаем превью именно выбранного сигнала.
+                                    EchoAudioPlayer.stop()
+                                    appScope.launch {
+                                        val targetMedia = AlbumArtResolver.getMediaInfo(
+                                            vinyl.artist,
+                                            vinyl.title,
+                                            vinyl.coverUrl
+                                        )
+                                        val preview = targetMedia.previewAudioUrl
+                                        if (!preview.isNullOrBlank()) {
+                                            EchoAudioPlayer.play(
+                                                "${vinyl.artist}::${vinyl.title}",
+                                                preview
+                                            )
+                                            feedbackMessage = "Слушаем ${vinyl.artist} — ${vinyl.title}"
+                                        } else {
+                                            feedbackMessage = "Превью недоступно — открываю плеер"
+                                            openMusicApp(context, vinyl.artist, vinyl.title, vinyl.sourceApp)
+                                        }
+                                    }
                                 },
                                 onMapLongPressed = { nx, ny ->
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     EchoSoundManager.triggerHeartbeatVibration(context)
                                     EchoSoundManager.playNeedleDrop()
                                     EchoStateRepository.sendWarmth(selectedVinyl?.id ?: "", nx, ny)
-                                    feedbackMessage = "♨️ Тепловой импульс отправлен на радар ✨"
+                                    feedbackMessage = "Тепловой импульс отправлен на радар"
                                 },
                                 onTogglePresence = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -585,13 +620,13 @@ fun EchoAppRoot() {
                                     EchoSoundManager.triggerHeartbeatVibration(context)
                                     EchoSoundManager.playNeedleDrop()
                                     EchoStateRepository.syncNeedle(activeTrack.id)
-                                    feedbackMessage = "🪡 Слушаете вместе: трек синхронизирован"
+                                    feedbackMessage = "Слушаете вместе: трек синхронизирован"
                                 },
                                 onSendWaveImpulse = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                     EchoSoundManager.playWavePulse()
                                     EchoStateRepository.sendWaveImpulse(activeTrack.id)
-                                    feedbackMessage = "🌊 Световой импульс отправлен в эфир"
+                                    feedbackMessage = "Импульс отправлен в эфир"
                                 },
                                 onSaveToChronicle = {
                                     haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -683,7 +718,7 @@ fun EchoAppRoot() {
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(
-                            text = reaction.symbol.ifBlank { "✦" },
+                            text = reaction.symbol.ifBlank { "•" },
                             fontSize = 22.sp
                         )
                         Column(modifier = Modifier.weight(1f)) {
@@ -764,52 +799,95 @@ fun EchoAppRoot() {
 fun NowPlayingStrip(
     title: String,
     artist: String,
+    album: String,
+    genre: String,
+    source: String,
+    coverUrl: String?,
+    colorHex: Long,
     isPlaying: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onTogglePlay: () -> Unit
 ) {
     Surface(
-        shape = RoundedCornerShape(14.dp),
-        color = EchoTokens.Surface.copy(alpha = 0.82f),
-        border = BorderStroke(1.dp, EchoTokens.SkyBlue.copy(alpha = 0.28f)),
+        shape = RoundedCornerShape(18.dp),
+        color = EchoTokens.Surface.copy(alpha = 0.86f),
+        border = BorderStroke(1.dp, EchoTokens.SkyBlue.copy(alpha = 0.30f)),
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 4.dp)
-            .height(46.dp)
+            .padding(horizontal = 18.dp, vertical = 5.dp)
             .clickable { onClick() }
     ) {
         Row(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 11.dp),
+                .fillMaxWidth()
+                .padding(10.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(9.dp)
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            LiveEqualizer(active = isPlaying)
+            if (!coverUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = coverUrl,
+                    contentDescription = "Обложка альбома",
+                    modifier = Modifier.size(52.dp).clip(RoundedCornerShape(11.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                GenerativeAvatarView(
+                    colorHex = colorHex,
+                    petals = 6,
+                    modifier = Modifier.size(52.dp)
+                )
+            }
+
             Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "${source.uppercase()} · ПЕРЕХВАТ",
+                    color = EchoTokens.SignalCyan,
+                    fontSize = 8.sp,
+                    fontFamily = FontFamily.Monospace,
+                    letterSpacing = 1.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
                 Text(
                     text = title,
                     color = EchoTokens.TextPrimary,
-                    fontSize = 12.sp,
+                    fontSize = 13.5.sp,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = artist,
+                    text = if (album.isBlank()) artist else "$artist · $album",
                     color = EchoTokens.TextSecondary,
+                    fontSize = 10.5.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = genre,
+                    color = EchoTokens.SkyBlue,
                     fontSize = 9.5.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
             }
-            Text(
-                text = if (isPlaying) "LIVE" else "ПАУЗА",
-                color = if (isPlaying) EchoTokens.SignalCyan else EchoTokens.TextSecondary,
-                fontSize = 8.5.sp,
-                fontFamily = FontFamily.Monospace,
-                letterSpacing = 1.sp,
-                fontWeight = FontWeight.Bold
-            )
+
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                LiveEqualizer(active = isPlaying)
+                Spacer(modifier = Modifier.height(5.dp))
+                Text(
+                    text = if (isPlaying) "❚❚" else "▶",
+                    color = EchoTokens.TextPrimary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(EchoTokens.SurfaceElevated)
+                        .clickable { onTogglePlay() }
+                        .padding(horizontal = 9.dp, vertical = 4.dp)
+                )
+            }
         }
     }
 }
@@ -851,6 +929,9 @@ fun EtherScreen(
     selectedVinyl: VinylTrack?,
     activeTrack: VinylTrack,
     isPlaying: Boolean,
+    nowCoverUrl: String?,
+    nowAlbum: String,
+    onToggleNowPlaying: () -> Unit,
     thermalPatches: List<ThermalPatch>,
     needleSyncedTargets: Set<String>,
     lagrangePoint: LagrangePointInfo?,
@@ -994,8 +1075,14 @@ fun EtherScreen(
             NowPlayingStrip(
                 title = activeTrack.title,
                 artist = activeTrack.artist,
+                album = nowAlbum,
+                genre = activeTrack.genre,
+                source = activeTrack.sourceApp,
+                coverUrl = nowCoverUrl,
+                colorHex = activeTrack.colorHex,
                 isPlaying = isPlaying,
-                onClick = onOpenDeck
+                onClick = onOpenDeck,
+                onTogglePlay = onToggleNowPlaying
             )
         }
 
@@ -1129,17 +1216,11 @@ fun EtherScreen(
                         )
                     }
                 } else {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(text = "✦", color = EchoTokens.SignalCyan, fontSize = 12.sp)
-                        Text(
-                            text = "Эфир спокоен • Нажмите на сигнал на сонаре для выбора",
-                            color = EchoTokens.TextSecondary,
-                            fontSize = 11.5.sp
-                        )
-                    }
+                    Text(
+                        text = "Эфир спокоен • Нажмите на сигнал на сонаре для выбора",
+                        color = EchoTokens.TextSecondary,
+                        fontSize = 11.5.sp
+                    )
                 }
             }
         }
@@ -1366,6 +1447,17 @@ fun DeckScreen(
                 overflow = TextOverflow.Ellipsis
             )
 
+            if (!mediaInfo.albumName.isNullOrBlank()) {
+                Text(
+                    text = mediaInfo.albumName,
+                    color = EchoTokens.TextSecondary,
+                    fontSize = 11.5.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
             // Аккуратный бейдж ЖАНРА (капсула, не показываем, пока трек не определён)
             if (!isWaitingForMusic) {
                 Surface(
@@ -1386,7 +1478,7 @@ fun DeckScreen(
 
                 // Акустический контекст одной строкой вместо аккордеона с таблицей
                 Text(
-                    text = "${activeTrack.bpm} BPM · ${activeTrack.camelotKey} · ${activeTrack.distanceLabel}",
+                    text = "${activeTrack.camelotKey} · ${activeTrack.distanceLabel}",
                     color = EchoTokens.TextSecondary,
                     fontSize = 9.5.sp,
                     fontFamily = FontFamily.Monospace,
@@ -1417,7 +1509,7 @@ fun DeckScreen(
                     modifier = Modifier.padding(top = 2.dp)
                 ) {
                     Text(
-                        text = "🪡 СЛУШАЕТЕ В УНИСОН",
+                        text = "СЛУШАЕТЕ В УНИСОН",
                         color = EchoTokens.Gold,
                         fontSize = 9.5.sp,
                         fontWeight = FontWeight.Bold,
@@ -1596,14 +1688,14 @@ fun DeckScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 DeckActionTile(
-                    icon = "🪡",
+                    icon = "∞",
                     label = if (isNeedleSynced) "В унисоне" else "Вместе",
                     color = EchoTokens.Gold,
                     modifier = Modifier.weight(1f),
                     onClick = onSyncNeedle
                 )
                 DeckActionTile(
-                    icon = "★",
+                    icon = "＋",
                     label = "В находки",
                     color = EchoTokens.VinylAmber,
                     modifier = Modifier.weight(1f),
@@ -1720,7 +1812,7 @@ fun EchoesScreen(
         listOf(
             VinylTrack("cur_1", "Судно", "Молчат Дома", "VK Музыка", "~75 м", "Пилигрим неоновых панелек", "Холодный пост-панк на перекрёстке спального района.", "Резонанс панельных высоток и синти-попа.", 88, 45f, 0.5f, 0xFF00F0FFL),
             VinylTrack("cur_2", "The Darkest Hours", "E-Mantra", "Яндекс.Музыка", "~120 м", "Ловец низких частот", "Глубокий эмбиент, пульсирующий в такт городской реке.", "Гармонический мост через колесо Камелота 8A.", 92, 120f, 0.7f, 0xFFFFB800L),
-            VinylTrack("cur_3", "Midnight City", "M83", "Spotify", "~190 м", "Хранитель бессонницы", "Свет фонарей отражается в мокром асфальте набережной.", "Октавный резонанс на темпе 105 BPM.", 84, 210f, 0.8f, 0xFFA855F7L)
+            VinylTrack("cur_3", "Midnight City", "M83", "Spotify", "~190 м", "Хранитель бессонницы", "Свет фонарей отражается в мокром асфальте набережной.", "Октавный резонанс на вечернем темпе.", 84, 210f, 0.8f, 0xFFA855F7L)
         )
     }
 
@@ -1790,89 +1882,104 @@ fun EchoesScreen(
                         Text(text = "В эфире пока тихо", color = EchoTokens.TextSecondary, fontSize = 13.sp)
                     }
                 } else {
+                    val byZone = allVinyls.groupBy { it.zoneName.ifBlank { "Рядом" } }
                     LazyColumn(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        items(allVinyls) { vinyl ->
-                            val accent = Color(vinyl.colorHex)
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = EchoTokens.Surface,
-                                border = BorderStroke(
-                                    0.8.dp,
-                                    if (vinyl.isSelf) EchoTokens.SignalCyan.copy(alpha = 0.5f)
-                                    else accent.copy(alpha = 0.35f)
-                                ),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { onSelectVinyl(vinyl) }
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        byZone.forEach { (zone, zoneTracks) ->
+                            item(key = "zone_$zone") {
+                                Text(
+                                    text = "${zone.uppercase()} · ${zoneTracks.size}",
+                                    color = EchoTokens.TextSecondary,
+                                    fontSize = 9.sp,
+                                    fontFamily = FontFamily.Monospace,
+                                    letterSpacing = 1.sp,
+                                    modifier = Modifier.padding(top = 6.dp, bottom = 1.dp)
+                                )
+                            }
+                            items(zoneTracks, key = { it.id }) { vinyl ->
+                                val accent = Color(vinyl.colorHex)
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = EchoTokens.Surface,
+                                    border = BorderStroke(
+                                        0.8.dp,
+                                        if (vinyl.isSelf) EchoTokens.SignalCyan.copy(alpha = 0.5f)
+                                        else accent.copy(alpha = 0.35f)
+                                    ),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onSelectVinyl(vinyl) }
                                 ) {
-                                    if (!vinyl.coverUrl.isNullOrBlank()) {
-                                        AsyncImage(
-                                            model = vinyl.coverUrl,
-                                            contentDescription = null,
-                                            modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)),
-                                            contentScale = ContentScale.Crop
-                                        )
-                                    } else {
-                                        GenerativeAvatarView(
-                                            colorHex = vinyl.colorHex,
-                                            petals = vinyl.avatarPetals,
-                                            modifier = Modifier.size(44.dp)
-                                        )
-                                    }
-
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = vinyl.poeticPersona,
-                                            color = accent,
-                                            fontSize = 10.5.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(text = vinyl.title, color = EchoTokens.TextPrimary, fontSize = 13.5.sp, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(text = "${vinyl.artist} · ${vinyl.genre}", color = EchoTokens.SkyBlue, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(
-                                            text = if (vinyl.isSelf) "Ваш личный маяк" else "${vinyl.distanceLabel} · ${vinyl.compatibility}% резонанс",
-                                            color = EchoTokens.TextSecondary,
-                                            fontSize = 10.sp
-                                        )
-                                        if (vinyl.reactions.isNotEmpty()) {
-                                            Row(
-                                                modifier = Modifier.padding(top = 3.dp),
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
-                                            ) {
-                                                vinyl.reactions.entries
-                                                    .sortedByDescending { it.value }
-                                                    .take(3)
-                                                    .forEach { (symbol, count) ->
-                                                        Text(
-                                                            text = "$symbol $count",
-                                                            color = EchoTokens.TextSecondary,
-                                                            fontSize = 9.sp,
-                                                            modifier = Modifier
-                                                                .clip(RoundedCornerShape(6.dp))
-                                                                .background(EchoTokens.SurfaceElevated)
-                                                                .padding(horizontal = 5.dp, vertical = 2.dp)
-                                                        )
-                                                    }
-                                            }
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        if (!vinyl.coverUrl.isNullOrBlank()) {
+                                            AsyncImage(
+                                                model = vinyl.coverUrl,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(44.dp).clip(RoundedCornerShape(8.dp)),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        } else {
+                                            GenerativeAvatarView(
+                                                colorHex = vinyl.colorHex,
+                                                petals = vinyl.avatarPetals,
+                                                modifier = Modifier.size(44.dp)
+                                            )
                                         }
-                                    }
 
-                                    Text(
-                                        text = "На деку ↗",
-                                        color = EchoTokens.SignalCyan,
-                                        fontSize = 11.5.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = vinyl.poeticPersona,
+                                                color = accent,
+                                                fontSize = 10.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = vinyl.title,
+                                                color = EchoTokens.TextPrimary,
+                                                fontSize = 13.5.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            Text(
+                                                text = "${vinyl.artist} · ${vinyl.genre}",
+                                                color = EchoTokens.SkyBlue,
+                                                fontSize = 11.sp,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            if (vinyl.album.isNotBlank()) {
+                                                Text(
+                                                    text = vinyl.album,
+                                                    color = EchoTokens.TextSecondary,
+                                                    fontSize = 10.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            Text(
+                                                text = if (vinyl.isSelf) "Ваш личный маяк"
+                                                else "${vinyl.distanceLabel} · ${vinyl.compatibility}% резонанс",
+                                                color = EchoTokens.TextSecondary,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+
+                                        Text(
+                                            text = "→",
+                                            color = EchoTokens.SignalCyan,
+                                            fontSize = 15.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -2610,8 +2717,8 @@ fun EchoBottomSheetHost(
                     Text(
                         text = when (sheetState) {
                             is EchoSheetState.SonarLegend -> "ЛЕГЕНДА СИГНАЛОВ СОНАРА"
-                            is EchoSheetState.CuratorStory -> "✦ ИСТОРИЯ ЭФИРА"
-                            is EchoSheetState.LagrangeDetail -> "✦ ТОЧКА РАВНОВЕСИЯ"
+                            is EchoSheetState.CuratorStory -> "ИСТОРИЯ ЭФИРА"
+                            is EchoSheetState.LagrangeDetail -> "ТОЧКА РАВНОВЕСИЯ"
                             is EchoSheetState.CoverZoom -> "ОБЛОЖКА РЕЛИЗА"
                             is EchoSheetState.CapsuleDetail -> "ТАЙНИК ГОРОДА"
                             is EchoSheetState.DropCapsule -> "ОСТАВИТЬ КАПСУЛУ"
@@ -2850,7 +2957,7 @@ fun EchoBottomSheetHost(
                         ) {
                             Box(modifier = Modifier.padding(12.dp), contentAlignment = Alignment.Center) {
                                 Text(
-                                    text = "В эфир ✦",
+                                    text = "В эфир",
                                     color = Color.Black,
                                     fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold

@@ -46,6 +46,8 @@ data class NearbyEchoSignal(
     val camelotKey: String = "8A",
     val genre: String = "indie",
     val avatarPetals: Int = 6,
+    val zoneName: String = "Вечерняя улица",
+    val album: String = "",
     val reactions: Map<String, Int> = emptyMap()
 )
 
@@ -514,6 +516,8 @@ object EchoStateRepository {
                             camelotKey = s.optString("camelotKey", "8A"),
                             genre = s.optString("genre", "indie"),
                             avatarPetals = s.optInt("avatarPetals", 6),
+                            zoneName = s.optString("zoneName", "Вечерняя улица"),
+                            album = s.optString("album", ""),
                             reactions = buildMap {
                                 val reactionsObj = s.optJSONObject("reactions")
                                 if (reactionsObj != null) {

@@ -1,6 +1,9 @@
 package ru.echo.radar
 
+import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
@@ -18,6 +21,12 @@ object EchoAudioPlayer {
     private var mediaPlayer: MediaPlayer? = null
     private val handler = Handler(Looper.getMainLooper())
     private var loadGeneration = 0
+    private var appContext: Context? = null
+    private var focusRequest: AudioFocusRequest? = null
+
+    fun init(context: Context) {
+        if (appContext == null) appContext = context.applicationContext
+    }
 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
@@ -40,6 +49,7 @@ object EchoAudioPlayer {
 
     fun play(key: String, url: String) {
         stop()
+        requestAudioFocus()
 
         val generation = ++loadGeneration
         _activeTrackKey.value = key
@@ -73,6 +83,7 @@ object EchoAudioPlayer {
                 _isPlaying.value = false
                 _isLoading.value = false
                 _activeTrackKey.value = null
+                abandonAudioFocus()
             }
             player.setOnErrorListener { mp, what, extra ->
                 Log.w(TAG, "Playback error: $what, $extra")
@@ -104,10 +115,12 @@ object EchoAudioPlayer {
         }
         _isPlaying.value = false
         _isLoading.value = false
+        abandonAudioFocus()
     }
 
     fun stop() {
         loadGeneration++
+        abandonAudioFocus()
         releasePlayer()
         resetState()
     }
@@ -116,6 +129,40 @@ object EchoAudioPlayer {
         _isPlaying.value = false
         _isLoading.value = false
         _activeTrackKey.value = null
+    }
+
+    private fun requestAudioFocus() {
+        val manager = appContext?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        val attributes = AudioAttributes.Builder()
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+            .setUsage(AudioAttributes.USAGE_MEDIA)
+            .build()
+        val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+            .setAudioAttributes(attributes)
+            .setOnAudioFocusChangeListener { change ->
+                if (change == AudioManager.AUDIOFOCUS_LOSS ||
+                    change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
+                ) {
+                    pause()
+                }
+            }
+            .build()
+        focusRequest = request
+        try {
+            manager.requestAudioFocus(request)
+        } catch (e: Exception) {
+            Log.w(TAG, "Audio focus request failed: ${e.message}")
+        }
+    }
+
+    private fun abandonAudioFocus() {
+        val request = focusRequest ?: return
+        val manager = appContext?.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+        try {
+            manager?.abandonAudioFocusRequest(request)
+        } catch (_: Exception) {
+        }
+        focusRequest = null
     }
 
     private fun releasePlayer() {

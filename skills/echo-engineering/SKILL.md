@@ -212,6 +212,12 @@ B_AB = 0.15·K + 0.10·T + 0.25·W + 0.15·M + 0.35·E
   mesh-фон — `drawBehind` на Ether/Deck; строка «сейчас играет» — `NowPlayingStrip`
   + `LiveEqualizer`; конкурентный анализ — `docs/design/COMPETITIVE_UI.md`,
   макет — `docs/design/phase2.html`.
+- **3.6.0 списки и свой трек:** `zoneName`/`album` в `NearbyEchoSignal`/`VinylTrack`;
+  «Отзвуки» группируются по зоне, без чипсов и реакций. Долгий тап: остановить свой
+  звук → `AlbumArtResolver.getMediaInfo` → `EchoAudioPlayer.play`; audio focus
+  (`AUDIOFOCUS_GAIN_TRANSIENT`) ставит Яндекс/VK на паузу. `EchoAudioPlayer.init(context)`
+  вызывается в `MainActivity.onCreate`. PWA: `user-scalable=no` убран — Leaflet
+  снова масштабируется пальцами.
 
 ## Запуск и проверка
 

@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#070A12">
@@ -198,7 +198,7 @@
   }
   .passport-track .t { font-weight: 800; font-size: 14px; }
   .passport-track .o { font-size: 11px; font-style: italic; color: #CBD5E1; margin-top: 4px; line-height: 1.5; }
-  .acoustics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; margin: 10px 0; }
+  .acoustics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; margin: 10px 0; }
   .acoustics .box { background: rgba(30,41,59,.6); border: 1px solid var(--line-2); border-radius: 9px; padding: 7px 4px; text-align: center; }
   .acoustics .k { font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: .7px; }
   .acoustics .v { font-size: 13px; font-weight: 800; color: var(--text); }
@@ -678,7 +678,6 @@
           '</div>' +
           '<div class="chips">' +
             '<span class="chip">Резонанс <b>' + esc(s.compatibilityPercent) + '%</b></span>' +
-            '<span class="chip">' + esc(s.bpm || '—') + ' BPM</span>' +
             '<span class="chip">' + esc(s.camelotKey || '—') + '</span>' +
             '<span class="chip">' + esc(s.zoneName || '—') + '</span>' +
             (s.encountersCount > 1 ? '<span class="chip">Встреч <b>' + esc(s.encountersCount) + '</b></span>' : '') +
@@ -821,7 +820,7 @@
       });
       var popup = '<b>' + esc(s.personaTitle || 'Слушатель') + '</b><br>' +
         esc(s.artist) + ' — ' + esc(s.title) + '<br>' +
-        'Резонанс ' + esc(s.compatibilityPercent) + '% · ' + esc(s.bpm || '—') + ' BPM · ' + esc(s.camelotKey || '—') + '<br>' +
+        'Резонанс ' + esc(s.compatibilityPercent) + '% · ' + esc(s.camelotKey || '—') + '<br>' +
         '«' + esc(s.personaObservation || '') + '»';
       halo.bindPopup(popup);
       core.bindPopup(popup);
@@ -920,7 +919,6 @@
       '</div>' +
       '<div class="acoustics">' +
         '<div class="box"><div class="k">Резонанс</div><div class="v">' + esc(s.compatibilityPercent) + '%</div></div>' +
-        '<div class="box"><div class="k">Темп</div><div class="v">' + esc(s.bpm || '—') + '</div></div>' +
         '<div class="box"><div class="k">Camelot</div><div class="v">' + esc(s.camelotKey || '—') + '</div></div>' +
       '</div>' +
       '<div class="story">' + esc(s.resonanceStory || '') + '</div>' +

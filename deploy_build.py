@@ -65,6 +65,8 @@ FILES_TO_COMMIT = [
     "docs/design/phase1.png",
     "docs/design/phase2.html",
     "docs/design/phase2.png",
+    "docs/design/phase3.html",
+    "docs/design/phase3.png",
     "docs/design/COMPETITIVE_UI.md",
     "skills/README.md",
     "skills/echo-product-concept/SKILL.md",
