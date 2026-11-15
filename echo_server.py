@@ -13,9 +13,13 @@
 - Автоматический UDP-маяк автопоиска (порт 8888)
 """
 
+from __future__ import annotations
+
 import base64
 import concurrent.futures
 import hashlib
+import hmac
+import ipaddress
 import json
 import logging
 import math
@@ -25,13 +29,17 @@ import re
 import secrets
 import socket
 import sqlite3
+import sys
 import threading
 import time
 import urllib.parse
 import urllib.request
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+SERVER_VERSION = "3.4.0"
+SERVER_STARTED_AT = time.time()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,11 +65,94 @@ class LRUCache:
         if len(self._cache) > self._maxsize:
             self._cache.popitem(last=False)
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 HTTP_PORT = int(os.environ.get("PORT", 8080))
 UDP_DISCOVERY_PORT = 8888
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "echo_memory.db")
-CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "echo_config.json")
-ARCHETYPES_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "echo_archetypes.json")
+DB_PATH = os.environ.get("ECHO_DB_PATH") or os.path.join(BASE_DIR, "echo_memory.db")
+CONFIG_PATH = os.environ.get("ECHO_CONFIG_PATH") or os.path.join(BASE_DIR, "echo_config.json")
+ARCHETYPES_PATH = os.environ.get("ECHO_ARCHETYPES_PATH") or os.path.join(BASE_DIR, "echo_archetypes.json")
+
+# --- Ограничения входных данных: защита публичного туннеля от перегрузки ---
+MAX_BODY_BYTES = 2 * 1024 * 1024          # максимальный размер JSON-тела запроса
+MAX_COVER_BYTES = 1_500_000               # максимальный размер обложки трека
+MAX_TEXT_LEN = 160                        # максимальная длина исполнителя/названия
+MAX_MESSAGE_LEN = 400                     # максимальная длина послания в тайнике
+MAX_COVERS = 48                           # сколько обложек держим в памяти
+STATE_RATE_LIMIT = 240                    # GET-запросов состояния в минуту с одного IP
+WRITE_RATE_LIMIT = 90                     # POST-запросов в минуту с одного IP
+
+# Признаки служебных медиа-сессий браузеров/расширений, которые не должны попадать в эфир
+JUNK_MARKERS = ("://", "offscreen.html", "chrome-extension", "about:blank", "newtab")
+TRAILING_BROWSER_ID_RE = re.compile(r"\s*\((?:[0-9A-Fa-f]{8,}|[0-9a-f]{16,})\)\s*$")
+MEDIA_EXT_RE = re.compile(r"\.(mp4|mov|webm|mkv|avi|ogg|opus|mp3|wav)\b", re.IGNORECASE)
+NEWS_MARKERS = ("mash", "топор", "прямой эфир", "голосовое сообщение", "видеосообщение")
+
+# Странные «треки» с пустым исполнителем и заголовком вкладки браузера (например,
+# "Systrum Sistum | SSR (308046B0AF4A39CB)") — это всё-таки музыка, просто метаданные
+# пришли из веб-плеера. Их не выбрасываем, а разбираем в artist/title.
+def is_junk_track(artist: str, title: str) -> bool:
+    a = (artist or "").strip()
+    t = (title or "").strip()
+    if not t:
+        return True
+    blob = f"{a} {t}".lower()
+    if any(marker in blob for marker in JUNK_MARKERS):
+        return True
+    if MEDIA_EXT_RE.search(blob):
+        return True
+    if any(marker in blob for marker in NEWS_MARKERS):
+        return True
+    if len(t) > 200:
+        return True
+    return False
+
+
+def sanitize_text(value, limit: int = MAX_TEXT_LEN, default: str = "") -> str:
+    """Убирает управляющие символы и ограничивает длину пользовательского текста."""
+    text = str(value if value is not None else default)
+    text = re.sub(r"[\x00-\x1f\x7f]+", " ", text).strip()
+    return text[:limit]
+
+
+def normalize_track_fields(artist: str, title: str) -> tuple[str, str]:
+    """Приводит метаданные веб-плееров к паре «исполнитель — трек».
+
+    Пример: ('', 'Systrum Sistum | SSR (308046B0AF4A39CB)')
+         -> ('Systrum Sistum', 'SSR')
+    """
+    artist = sanitize_text(artist, MAX_TEXT_LEN)
+    title = sanitize_text(title, MAX_TEXT_LEN)
+    title = TRAILING_BROWSER_ID_RE.sub("", title).strip()
+
+    if not artist:
+        for separator in (" | ", " — ", " – ", " - "):
+            if separator not in title:
+                continue
+            left, right = title.split(separator, 1)
+            left = left.strip(" -—–|")
+            right = TRAILING_BROWSER_ID_RE.sub("", right).strip(" -—–|")
+            if left and right:
+                artist = left[:MAX_TEXT_LEN]
+                title = right[:MAX_TEXT_LEN]
+            break
+
+    return artist, title
+
+
+def normalize_zone(zone_name: str) -> str:
+    """Приводит произвольное имя зоны к одной из известных зон города."""
+    raw = sanitize_text(zone_name, 120)
+    if not raw:
+        return "Вечерняя улица"
+    for zone in ZONE_COORDINATES:
+        if raw == zone:
+            return zone
+    lowered = raw.lower()
+    for zone in ZONE_COORDINATES:
+        base = zone.split(" · ")[0].lower()
+        if base and (base in lowered or lowered in zone.lower()):
+            return zone
+    return "Вечерняя улица"
 
 def load_archetypes_library():
     if os.path.exists(ARCHETYPES_PATH):
@@ -94,9 +185,9 @@ def find_archetype_in_library(artist: str, album: str, genre: str):
     curated = ARCHETYPES_LIBRARY.get("curated_records", {})
     genre_clusters = ARCHETYPES_LIBRARY.get("genre_clusters", {})
 
-    art_clean = artist.strip().lower()
-    alb_clean = album.strip().lower()
-    gen_clean = genre.strip().lower()
+    art_clean = (artist or "").strip().lower()
+    alb_clean = (album or "").strip().lower()
+    gen_clean = (genre or "").strip().lower()
 
     if alb_clean:
         key_album = f"{art_clean}::{alb_clean}"
@@ -123,11 +214,45 @@ def find_archetype_in_library(artist: str, album: str, genre: str):
 
 DB_LOCK = threading.Lock()
 REACTIONS_LOCK = threading.Lock()
+RATE_LOCK = threading.Lock()
+RATE_BUCKETS = {}                 # ip -> deque[timestamp]
+EVENT_ID_LOCK = threading.Lock()
+_LAST_EVENT_ID = 0
 METADATA_CACHE = LRUCache(maxsize=500)
 AI_PERSONA_CACHE = LRUCache(maxsize=500)
 RECENT_REACTIONS = []
-DEVICE_COVERS = {}
+DEVICE_COVERS = LRUCache(maxsize=MAX_COVERS)
 _PERSONA_EXECUTOR = None
+GEMINI_WARNED = False
+
+
+def next_event_id() -> int:
+    """Монотонно возрастающий числовой id события (мс), без коллизий при параллельных запросах."""
+    global _LAST_EVENT_ID
+    with EVENT_ID_LOCK:
+        now_ms = int(time.time() * 1000)
+        _LAST_EVENT_ID = now_ms if now_ms > _LAST_EVENT_ID else _LAST_EVENT_ID + 1
+        return _LAST_EVENT_ID
+
+
+def rate_limit_allow(ip: str, limit: int, window: float = 60.0) -> bool:
+    """Простое скользящее окно: не более limit запросов за window секунд с одного IP."""
+    now = time.time()
+    with RATE_LOCK:
+        bucket = RATE_BUCKETS.get(ip)
+        if bucket is None:
+            bucket = deque()
+            RATE_BUCKETS[ip] = bucket
+        while bucket and now - bucket[0] > window:
+            bucket.popleft()
+        if len(bucket) >= limit:
+            return False
+        bucket.append(now)
+        # Периодическая уборка пустых корзин, чтобы словарь не рос бесконечно
+        if len(RATE_BUCKETS) > 512:
+            for key in [k for k, v in RATE_BUCKETS.items() if not v or now - v[-1] > window]:
+                RATE_BUCKETS.pop(key, None)
+        return True
 
 # --- АРГОН & CHATGPT: ИНТЕРАКТИВНЫЙ ЭФИР ---
 NEEDLE_SYNCS = {}      # senderId -> {"targetId": str, "time": float}
@@ -226,7 +351,10 @@ def calculate_serendipity_engine(genre_a: str, genre_b: str, base_sim: float) ->
 
 def infer_track_acoustics(artist: str, title: str, mood_label: str = "") -> dict:
     """Вычисляет акустический профиль трека (BPM, Camelot, Mood, Genre) по имени и настроению."""
-    seed_str = f"{artist.lower().strip()}|{title.lower().strip()}"
+    artist = (artist or "").strip()
+    title = (title or "").strip()
+    mood_label = (mood_label or "").strip()
+    seed_str = f"{artist.lower()}|{title.lower()}"
     h = int(hashlib.sha256(seed_str.encode("utf-8")).hexdigest()[:8], 16)
 
     bpm_pool = [72, 80, 85, 92, 100, 110, 118, 120, 124, 128, 132, 140]
@@ -242,129 +370,44 @@ def infer_track_acoustics(artist: str, title: str, mood_label: str = "") -> dict
     art_l = artist.lower()
     tit_l = title.lower()
     mood_l = mood_label.lower()
-
-    # 1. Специфические жанровые эвристики и артисты
-    if any(w in art_l for w in ["therion", "nightwish", "epica", "within temptation", "haggard", "delain"]):
-        genre = "Symphonic Metal"
-        bpm = 135
-        camelot_key = "9A"
-        valence = 0.35
-        energy = 0.92
-    elif any(w in art_l or w in tit_l or w in mood_l for w in [
-        "metallica", "iron maiden", "judas priest", "rammstein", "slipknot", "slayer",
-        "megadeth", "pantera", "dimmu borgir", "cradle of filth", "blind guardian",
-        "sabaton", "amorphis", "in flames", "arch enemy", "behemoth", "gojira",
-        "sepultura", "avenged sevenfold", "ghost", "opeth", "mastodon", "meshuggah",
-        "deftones", "korn", "disturbed", "system of a down", "soad", "ария", "эпидемия",
-        "мастер", "чёрный обелиск", "кипелов", "северный флот", "powerwolf", "alestorm",
-        "metal", "метал"
-    ]):
-        genre = "Metal"
-        bpm = 138
-        camelot_key = "9A"
-        valence = 0.30
-        energy = 0.90
-    elif any(w in art_l or w in mood_l for w in ["молчат дома", "ploho", "пост-панк", "post-punk", "дурной", "буерак", "перемотка", "кино"]):
-        genre = "Post-Punk"
+    if any(w in art_l or w in mood_l for w in ["молчат дома", "ploho", "пост-панк", "post-punk", "дурной"]):
+        genre = "post-punk"
         bpm = 140
         camelot_key = "9A"
         valence = 0.28
         energy = 0.74
-    elif any(w in art_l or w in mood_l for w in ["sirotkin", "сироткин", "август", "теплый винил", "инди", "сбпч", "дайте танк"]):
-        genre = "Indie"
+    elif any(w in art_l or w in mood_l for w in ["sirotkin", "сироткин", "август", "теплый винил", "инди"]):
+        genre = "indie"
         bpm = 118
         camelot_key = "8B"
         valence = 0.42
         energy = 0.54
-    elif any(w in art_l or w in mood_l for w in ["pompeya", "дрим", "dream", "shoegaze", "шугейз"]):
-        genre = "Dream-Pop"
+    elif any(w in art_l or w in mood_l for w in ["pompeya", "дрим", "dream"]):
+        genre = "dream-pop"
         bpm = 120
         camelot_key = "8A"
         valence = 0.65
         energy = 0.60
-    elif any(w in art_l or w in mood_l for w in ["burial", "трип-хоп", "trip-hop", "lo-fi", "лоу-фай", "massive attack", "portishead"]):
-        genre = "Trip-Hop"
-        bpm = 72
+    elif any(w in art_l or w in mood_l for w in ["burial", "трип-хоп", "trip-hop", "lo-fi", "лоу-фай"]):
+        genre = "trip-hop"
+        bpm = 70
         camelot_key = "8A"
         valence = 0.30
         energy = 0.48
-    elif any(w in art_l or w in mood_l for w in ["техно", "techno", "minimal", "minimal-techno", "kraftwerk", "deadmau5", "prodigy"]):
-        genre = "Techno"
-        bpm = 126
-        camelot_key = "11A"
+    elif any(w in art_l or w in mood_l for w in ["техно", "techno", "minimal"]):
+        genre = "minimal-techno"
+        bpm = 124
+        camelot_key = "8A"
         valence = 0.35
-        energy = 0.85
-    elif any(w in art_l or w in mood_l for w in ["синт", "synth", "synthwave", "kavinsky", "carpenter brut"]):
-        genre = "Synthwave"
+        energy = 0.82
+    elif any(w in art_l or w in mood_l for w in ["синт", "synth"]):
+        genre = "synth-pop"
         bpm = 120
         camelot_key = "8A"
         valence = 0.50
-        energy = 0.72
-    elif any(w in art_l or w in mood_l for w in ["queen", "pink floyd", "nirvana", "linkin park", "muse", "radiohead", "би-2", "сплин", "ддт", "рок", "rock"]):
-        genre = "Rock"
-        bpm = 124
-        camelot_key = "8A"
-        valence = 0.45
-        energy = 0.75
-    elif any(w in art_l or w in mood_l for w in ["zimmer", "einaudi", "bach", "mozart", "beethoven", "симфония", "orchestra"]):
-        genre = "Classical"
-        bpm = 80
-        camelot_key = "6A"
-        valence = 0.50
-        energy = 0.40
-    elif any(w in art_l or w in mood_l for w in ["jazz", "джаз", "miles davis", "coltrane"]):
-        genre = "Jazz"
-        bpm = 95
-        camelot_key = "4A"
-        valence = 0.55
-        energy = 0.45
-    elif any(w in art_l or w in mood_l for w in ["eminem", "oxxxymiron", "рэп", "rap", "hip-hop", "хип-хоп"]):
-        genre = "Hip-Hop"
-        bpm = 92
-        camelot_key = "7A"
-        valence = 0.45
-        energy = 0.70
+        energy = 0.68
     else:
-        # Попытка извлечь официальный жанр из iTunes Search API
-        meta = lookup_metadata(artist, title) if (artist and not artist.startswith("Ожидание")) else {}
-        raw_g = (meta.get("genre") or "").lower().strip()
-        if "metal" in raw_g or "метал" in raw_g:
-            genre = "Symphonic Metal" if any(w in art_l for w in ["therion", "nightwish", "epica", "within temptation"]) else "Metal"
-            bpm = 135
-            camelot_key = "9A"
-            energy = 0.90
-        elif "rock" in raw_g or "рок" in raw_g:
-            genre = "Rock"
-            bpm = 125
-            camelot_key = "8A"
-        elif "classical" in raw_g or "классик" in raw_g or "soundtrack" in raw_g:
-            genre = "Classical"
-            bpm = 80
-            camelot_key = "6A"
-        elif "jazz" in raw_g or "джаз" in raw_g or "blues" in raw_g:
-            genre = "Jazz"
-            bpm = 95
-            camelot_key = "4A"
-        elif "electronic" in raw_g or "dance" in raw_g or "techno" in raw_g:
-            genre = "Electronic"
-            bpm = 126
-            camelot_key = "11A"
-        elif "hip-hop" in raw_g or "rap" in raw_g:
-            genre = "Hip-Hop"
-            bpm = 92
-            camelot_key = "7A"
-    # Deterministic acoustic fingerprint derived from artist + title
-    fingerprint = abs(hash(f"{artist.lower().strip()}::{title.lower().strip()}"))
-    keys_pool = ["8A", "7A", "9A", "8B", "11A", "4A", "2A", "5A", "10A", "1A", "12B", "3B"]
-    camelot_key = keys_pool[fingerprint % len(keys_pool)]
-    bpm = 75 + ((fingerprint // 7) % 65)
-    valence = 0.20 + (((fingerprint // 13) % 70) / 100.0)
-    energy = 0.25 + (((fingerprint // 17) % 65) / 100.0)
-
-    if meta.get("genre"):
-        genre = meta["genre"]
-    else:
-        genre = "Indie"
+        genre = "indie"
 
     return {
         "bpm": bpm,
@@ -378,25 +421,29 @@ def calculate_full_resonance(track_a: dict, track_b: dict) -> tuple[int, str]:
     """Итоговый расчет резонанса по формуле ChatGPT: R_AB = 100 * [ B_AB + lambda*(1-B_AB)*S_AB ]."""
     k_ab = calculate_camelot_harmonic(track_a.get("camelotKey", "8A"), track_b.get("camelotKey", "8A"))
     t_ab = calculate_tempo_harmonic(float(track_a.get("bpm", 120)), float(track_b.get("bpm", 120)))
-    g_match = 1.0 if track_a.get("genre", "").lower() == track_b.get("genre", "").lower() else 0.45
-    b_ab = (0.35 * k_ab) + (0.25 * t_ab) + (0.25 * m_ab) + (0.15 * g_match)
+    w_ab = 0.84
+    m_ab = calculate_mood_vector(
+        float(track_a.get("valence", 0.4)), float(track_a.get("energy", 0.5)),
+        float(track_b.get("valence", 0.4)), float(track_b.get("energy", 0.5))
+    )
+    e_ab = 0.86
+
+    b_ab = (0.15 * k_ab) + (0.10 * t_ab) + (0.25 * w_ab) + (0.15 * m_ab) + (0.35 * e_ab)
 
     s_ab, bridge_desc = calculate_serendipity_engine(
         track_a.get("genre", "indie"), track_b.get("genre", "indie"), b_ab
     )
 
-    lambda_factor = 0.20
+    lambda_factor = 0.25
     r_ab = 100.0 * (b_ab + lambda_factor * (1.0 - b_ab) * s_ab)
-    final_compat = int(min(99, max(35, round(r_ab))))
+    final_compat = int(min(99, max(58, round(r_ab))))
 
-    if final_compat >= 85:
-        story = f"Гармонический резонанс ({track_a.get('genre', 'Музыка')} ↔ {track_b.get('genre', 'Музыка')}): звуковые ауры сливаются в унисон."
-    elif bridge_desc:
+    if bridge_desc:
         story = f"Культурный мост ({bridge_desc}): октавный резонанс {int(track_a.get('bpm', 120))}/{int(track_b.get('bpm', 120))} BPM."
-    elif final_compat >= 70:
+    elif final_compat >= 88:
+        story = f"Редкое созвучие Camelot ({track_a.get('camelotKey', '8A')} ↔ {track_b.get('camelotKey', '8A')}) и фазовый синхрон темпа."
+    elif final_compat >= 75:
         story = "Тёплый вечерний резонанс: ваши звуковые спектры пересеклись в этой точке города."
-    elif final_compat < 50:
-        story = f"Акустический контраст: разные звуковые полюса ({track_a.get('genre', 'Эфир')} против {track_b.get('genre', 'Эфир')})."
     else:
         story = "Случайная встреча контрастов в ночном эфире."
 
@@ -484,24 +531,41 @@ ORGANIC_PERSONAS = [
 ]
 
 
+def generate_echo_token() -> str:
+    """Новый случайный токен доступа к эфиру (32 hex-символа)."""
+    return secrets.token_hex(16)
+
+
 def load_config():
+    cfg = None
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-            # Если токена нет — генерируем и сохраняем
-            if not cfg.get("echo_token"):
-                cfg["echo_token"] = "1c13ee8697755fdc4518013ea2fd6996"
-                with open(CONFIG_PATH, "w", encoding="utf-8") as fw:
-                    json.dump(cfg, fw, ensure_ascii=False, indent=2)
-            return cfg
         except Exception as e:
             logger.warning("Config load error: %s", e)
+            cfg = None
 
-    cfg = {
-        "gemini_api_key": os.environ.get("GEMINI_API_KEY", ""),
-        "echo_token": "1c13ee8697755fdc4518013ea2fd6996"
-    }
+    if not isinstance(cfg, dict):
+        cfg = {"gemini_api_key": os.environ.get("GEMINI_API_KEY", "")}
+
+    changed = False
+    env_token = os.environ.get("ECHO_TOKEN", "").strip()
+    if env_token:
+        # Явное указание токена из окружения имеет приоритет (удобно для Docker/CI)
+        if cfg.get("echo_token") != env_token:
+            cfg["echo_token"] = env_token
+            changed = True
+    elif not cfg.get("echo_token"):
+        cfg["echo_token"] = generate_echo_token()
+        changed = True
+        logger.info("🔑 Сгенерирован новый Echo Token (сохранён в echo_config.json)")
+
+    if not cfg.get("gemini_api_key"):
+        cfg["gemini_api_key"] = os.environ.get("GEMINI_API_KEY", "")
+
+    if changed:
+        save_config(cfg)
     return cfg
 
 
@@ -539,43 +603,27 @@ def seed_default_devices(cur, now):
     s1_lat, s1_lon = get_zone_jittered_coords("Вечерняя улица", "seed1")
     s2_lat, s2_lon = get_zone_jittered_coords("Сретенка · Камерные бары", "seed2")
     s3_lat, s3_lon = get_zone_jittered_coords("Парк Горького · Набережная", "seed3")
-    s4_lat, s4_lon = get_zone_jittered_coords("Вечерняя улица", "seed4")
-    s5_lat, s5_lon = get_zone_jittered_coords("Покровка · Ночные кофейни", "seed5")
 
     seed_signals = [
-        (
-            "sig_nightwish_04", "Nightwish", "Nemo", "Яндекс Музыка",
-            "Страж древних рун",
-            "Вслушивается в раскаты симфонического хорала, собирая древний звуковой эпос в ночном воздухе.",
-            "Симфонический метал", 0xFFFFD700, 8, "Вечерняя улица", 28, 25.0, 0.28, 96, 4, 5,
-            json.dumps({"✦": 6, "🌊": 3}, ensure_ascii=False), s4_lat, s4_lon, now
-        ),
-        (
-            "sig_skriptonit_05", "Скриптонит", "Положение", "VK Музыка",
-            "Чеканщик уличного ритма",
-            "Чеканит тяжелый ритм шагов по ночному асфальту под плотный качающий бит.",
-            "Уличный хип-хоп", 0xFF64748B, 4, "Покровка · Ночные кофейни", 165, 215.0, 0.85, 36, 1, 1,
-            json.dumps({"⚡": 2}, ensure_ascii=False), s5_lat, s5_lon, now
-        ),
         (
             "sig_sirotkin_01", "Sirotkin", "Август", "Яндекс Музыка",
             "Архивариус забытых кассет",
             "Слушает теплые гитарные реверберации, превращая суету улицы в медленный ночной фильм.",
-            "Теплый винил", 0xFF38BDF8, 6, "Вечерняя улица", 45, 110.0, 0.42, 85, 3, 4,
+            "Теплый винил", 0xFF38BDF8, 6, "Вечерняя улица", 38, 35.0, 0.32, 94, 3, 4,
             json.dumps({"✦": 4, "🌙": 2}, ensure_ascii=False), s1_lat, s1_lon, now
         ),
         (
             "sig_molchat_02", "Молчат Дома", "Судно", "VK Музыка",
             "Пилигрим неоновых панелек",
             "Вслушивается в упругий бас пустых переулков, удерживая пульс вечернего города.",
-            "Холодный пост-панк", 0xFFA855F7, 8, "Сретенка · Камерные бары", 80, 160.0, 0.58, 80, 2, 3,
+            "Холодный пост-панк", 0xFFA855F7, 8, "Сретенка · Камерные бары", 75, 145.0, 0.52, 88, 2, 3,
             json.dumps({"🔥": 3, "🌊": 1}, ensure_ascii=False), s2_lat, s2_lon, now
         ),
         (
             "sig_pompeya_03", "Pompeya", "90", "Яндекс Музыка",
             "Ловец виниловых волн",
             "Несет в наушниках солнечный дрим-грув и легкую ностальгию уходящего дня.",
-            "Бархатный инди", 0xFF34D399, 5, "Парк Горького · Набережная", 125, 280.0, 0.72, 74, 1, 1,
+            "Бархатный инди", 0xFF34D399, 5, "Парк Горького · Набережная", 115, 255.0, 0.68, 81, 1, 1,
             json.dumps({"✦": 2}, ensure_ascii=False), s3_lat, s3_lon, now
         )
     ]
@@ -714,6 +762,19 @@ def init_db():
                 logger.debug("ALTER TABLE capsules min_resonance/secret_perk: %s", e)
         conn.commit()
 
+        # Гигиена эфира: убираем служебные записи браузеров/расширений,
+        # которые могли попасть в базу через SMTC или старые версии клиентов.
+        try:
+            cur.execute("SELECT id, artist, title FROM devices")
+            junk_ids = [row[0] for row in cur.fetchall() if is_junk_track(row[1], row[2])]
+            for junk_id in junk_ids:
+                cur.execute("DELETE FROM devices WHERE id = ?", (junk_id,))
+            if junk_ids:
+                conn.commit()
+                logger.info("🧹 Эфир очищен от %d служебных записей", len(junk_ids))
+        except Exception as e:
+            logger.debug("junk cleanup error: %s", e)
+
         cur.execute("SELECT COUNT(*) FROM devices")
         if cur.fetchone()[0] == 0:
             seed_default_devices(cur, time.time())
@@ -800,6 +861,7 @@ def get_recent_tracks_for_device(device_id: str, limit: int = 5):
 
 
 def generate_persona_via_gemini(api_key: str, artist: str, title: str, album: str, genre: str, recent_tracks: list):
+    global GEMINI_WARNED
     prompt_text = (
         f"Ты — чуткий музыкальный куратор и поэт атмосферного приложения 'ЭХО'.\n"
         f"Твоя задача — создать глубокий, естественный и уникальный литературный образ слушателя без механических штампов.\n"
@@ -817,7 +879,14 @@ def generate_persona_via_gemini(api_key: str, artist: str, title: str, album: st
         f"}}"
     )
 
-    models_to_try = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+    # Актуальные модели Gemini (1.5-линейка отключена Google и отвечает 404).
+    # Порядок: сначала основная, затем более дешёвые/быстрые резервы.
+    models_to_try = [
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.0-flash",
+        "gemini-2.0-flash-lite",
+    ]
     for model_name in models_to_try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key.strip()}"
         req_data = {
@@ -849,12 +918,22 @@ def generate_persona_via_gemini(api_key: str, artist: str, title: str, album: st
                             "compatibilityPercent": int(data.get("compatibilityPercent", 90))
                         }
         except Exception as e:
-            logger.warning("Gemini model %s failed: %s", model_name, e)
+            if not GEMINI_WARNED:
+                GEMINI_WARNED = True
+                logger.warning(
+                    "Gemini недоступен (%s). Работаем на локальной библиотеке архетипов. "
+                    "Частая причина: гео-ограничение Gemini для России или исчерпанная квота ключа.",
+                    e
+                )
+            else:
+                logger.debug("Gemini model %s failed: %s", model_name, e)
             continue
     return None
 
 
 def generate_curated_persona(artist: str, title: str, device_id: str, incoming_recent_tracks: list = None):
+    artist = sanitize_text(artist, MAX_TEXT_LEN) or "Неизвестный исполнитель"
+    title = sanitize_text(title, MAX_TEXT_LEN) or "Без названия"
     cache_key = f"{artist.strip().lower()}::{title.strip().lower()}"
     if cache_key in AI_PERSONA_CACHE:
         return AI_PERSONA_CACHE[cache_key]
@@ -893,88 +972,25 @@ def generate_curated_persona(artist: str, title: str, device_id: str, incoming_r
             save_curated_record_to_library(save_key, ai_res)
             return ai_res
 
-    # 3. Эстетический поэтический генератор: формирует уникальный архетип под артиста, трек и жанр
-    seed_str = f"{artist.lower().strip()}|{title.lower().strip()}|{genre.lower().strip()}"
+    # 3. Эстетический фоллбэк: берем органический архетип
+    seed_str = f"{artist.lower().strip()}|{title.lower().strip()}|{album.lower().strip()}"
     digest = hashlib.sha256(seed_str.encode("utf-8")).digest()
-    h = int.from_bytes(digest[:4], "big")
+    idx = digest[0] % len(ORGANIC_PERSONAS)
+    title_base, mood_base, col_base, obs_base = ORGANIC_PERSONAS[idx]
 
-    g_clean = genre.lower().strip()
-    if any(m in g_clean for m in ["symphonic metal", "симфонический метал"]) or any(m in artist.lower() for m in ["therion", "nightwish", "epica"]):
-        titles_pool = ["Алхимик симфонического шторма", "Страж древних рун", "Мастер нордического эпоса", "Владыка грозового хорала"]
-        obs_pool = [
-            "Вслушивается в раскаты нордического хорала и эпический гул струнных в ночном воздухе.",
-            "Превращает городские переулки в оживший древнескандинавский миф под тяжелые симфонические риффы.",
-            "Ловит мерцание древних созвездий сквозь мощь хоровых партий и раскатистых гитар."
-        ]
-        mood_base = "Симфонический эпос"
-        col_base = 0xFFFFD700
-    elif any(m in g_clean for m in ["metal", "метал"]):
-        titles_pool = ["Страж грозового шторма", "Инженер стального монолита", "Пилигрим тяжелых риффов", "Хранитель железного пламени"]
-        obs_pool = [
-            "Встречает ночной ветер под бескомпромиссную мощь барабанов и раскатистые гитарные залпы.",
-            "Разрезает ночную мглу плотной стеной гитарного звука и несокрушимой энергии.",
-            "Синхронизирует пульс с тяжелым качающим ритмом, рассеивающим дневную суету."
-        ]
-        mood_base = "Тяжелый гитарный монолит"
-        col_base = 0xFFEF4444
-    elif any(m in g_clean for m in ["post-punk", "пост-панк"]):
-        titles_pool = ["Пилигрим неоновых панелек", "Страж полуночного инея", "Странник бетонных лабиринтов", "Созерцатель холодных витрин"]
-        obs_pool = [
-            "Вслушивается в упругий бас пустых дворов, храня верность честному и чистому звуку.",
-            "Шагает по ночным проспектам под холодные барабанные драм-машины и колючие гитарные аккорды."
-        ]
-        mood_base = "Холодный пост-панк"
-        col_base = 0xFFA855F7
-    elif any(m in g_clean for m in ["trip-hop", "трип-хоп", "lo-fi"]):
-        titles_pool = ["Штурман полуночных мостов", "Ловец дымного полумрака", "Алхимик замедленного времени", "Созерцатель ночного дождя"]
-        obs_pool = [
-            "Синхронизирует дыхание с плотным кинематографичным битом и потрескиванием старой виниловой дорожки.",
-            "Растворяется в густых басовых волнах, наблюдая за медленным скольжением мокрых фар по набережной."
-        ]
-        mood_base = "Кинематографичный трип-хоп"
-        col_base = 0xFF06B6D4
-    elif any(m in g_clean for m in ["electronic", "techno", "техно", "synthwave"]):
-        titles_pool = ["Инженер ночного монолита", "Навигатор неоновых трасс", "Архитектор цифровых сфер", "Пилигрим аналогового пульса"]
-        obs_pool = [
-            "Синхронизирует шаг с железным гипнотическим ритмом полуночных подземных галерей.",
-            "Мчится по ночной автостраде под раскаты аналоговых секвенций и неоновый пульс города."
-        ]
-        mood_base = "Аналоговый пульс"
-        col_base = 0xFF38BDF8
-    elif any(m in g_clean for m in ["hip-hop", "хип-хоп", "rap", "рэп"]):
-        titles_pool = ["Поэт ночных кварталов", "Чеканщик честного ритма", "Летописец полуночных дворов", "Хранитель уличного слога"]
-        obs_pool = [
-            "Чеканит ритм шагов по ночному асфальту под плотный качающий бит и искреннее слово.",
-            "Слушает пульс спальных районов, сплетая истории улиц в единую звуковую рифму."
-        ]
-        mood_base = "Уличный ритм"
-        col_base = 0xFF64748B
-    elif any(m in g_clean for m in ["classical", "классика", "soundtrack"]):
-        titles_pool = ["Архитектор вечных форм", "Мастер акустической тишины", "Ловец симфонической глубины"]
-        obs_pool = [
-            "Слушает прикосновение пальцев к клавишам рояля и трепетное дыхание струнного квартета.",
-            "Созерцает величие замысла вселенной через совершенство полифонии великих мастеров."
-        ]
-        mood_base = "Симфоническая тишина"
-        col_base = 0xFFF59E0B
-    else:
-        titles_pool = ["Архивариус забытых кассет", "Ловец виниловых ветров", "Романтик вечерних набережных", "Странник теплых дворов"]
-        obs_pool = [
-            "Превращает прогулку по переулкам в искреннее кинематографичное переживание.",
-            "Несет в наушниках свет уходящего дня, согревая холодный вечер теплым звуком."
-        ]
-        mood_base = "Теплый винил"
-        col_base = 0xFF38BDF8
-
-    title_base = titles_pool[h % len(titles_pool)]
-    obs_base = obs_pool[h % len(obs_pool)]
     petals = 5 + (digest[1] % 5)
-    compat = 82 + (digest[2] % 17)
+    compat = 78 + (digest[2] % 21)
+
+    obs = obs_base
+    if len(recent_tracks) > 1:
+        obs = f"{obs} [Траектория вечера: путь сквозь {len(recent_tracks)} композиции к ночному созерцанию]"
+    elif genre:
+        obs = f"{obs} [Вайб: {genre}]"
 
     result = {
         "personaTitle": title_base,
         "moodLabel": mood_base,
-        "personaObservation": obs_base,
+        "personaObservation": obs,
         "colorHex": ensure_opaque_color(col_base),
         "avatarPetals": petals,
         "compatibilityPercent": compat
@@ -989,7 +1005,7 @@ def record_history_if_unique(cur, device_id: str, artist: str, title: str, perso
         (device_id,)
     )
     last = cur.fetchone()
-    if last and last[0].strip().lower() == artist.strip().lower() and last[1].strip().lower() == title.strip().lower():
+    if last and (last[0] or "").strip().lower() == artist.strip().lower() and (last[1] or "").strip().lower() == title.strip().lower():
         return
 
     now_ts = time.time()
@@ -1007,7 +1023,7 @@ def record_history_if_unique(cur, device_id: str, artist: str, title: str, perso
         logger.debug("prune history error: %s", e)
 
 
-def build_state_payload(for_device_id: str = None):
+def build_state_payload(for_device_id: str = None, include_token: bool = False):
     with DB_LOCK:
         conn = get_db_connection()
         conn.row_factory = sqlite3.Row
@@ -1018,7 +1034,9 @@ def build_state_payload(for_device_id: str = None):
         # Автоматическая очистка старых треков старше 90 минут (кроме постоянных маяков)
         cutoff_time = now_sec - (90 * 60)
         cur.execute("DELETE FROM devices WHERE updated_at < ? AND id NOT LIKE 'sig_%'", (cutoff_time,))
-        cur.execute("UPDATE devices SET updated_at = ? WHERE id LIKE 'sig_%' AND updated_at < ?", (now_sec - 120, cutoff_time))
+        # Золотой фонд ЭХО (sig_*) — постоянные маяки демо-города: всегда «живые»
+        cur.execute("UPDATE devices SET updated_at = ? WHERE id LIKE 'sig_%' AND updated_at < ?",
+                    (now_sec, now_sec - 240))
         conn.commit()
 
         cur.execute("SELECT COUNT(*) FROM devices")
@@ -1235,7 +1253,16 @@ def build_state_payload(for_device_id: str = None):
     reactions_history = []
     with REACTIONS_LOCK:
         for r in RECENT_REACTIONS:
-            if not for_device_id or r.get("targetId") in (for_device_id, "") or r.get("senderId") == for_device_id:
+            target = str(r.get("targetId", "") or "")
+            # Пульт и «публичные» отклики видны всем; личные отклики — только участникам
+            visible = (
+                not for_device_id
+                or for_device_id == "dashboard"
+                or target in (for_device_id, "", "broadcast", "all")
+                or target.startswith(("sig_", "cap_", "pc_studio_node"))
+                or r.get("senderId") == for_device_id
+            )
+            if visible:
                 reactions_history.append({
                     "id": r["id"],
                     "targetId": r.get("targetId", ""),
@@ -1291,9 +1318,25 @@ def build_state_payload(for_device_id: str = None):
     now_hour = datetime.now().hour
     is_dawn_mode = (4 <= now_hour < 6)
 
+    server_meta = {
+        "version": SERVER_VERSION,
+        "startedAt": int(SERVER_STARTED_AT),
+        "uptimeSec": int(now_sec - SERVER_STARTED_AT),
+        "hasAi": bool(str(SERVER_CONFIG.get("gemini_api_key", "")).strip()),
+        "aiError": bool(GEMINI_WARNED),
+        "python": sys.version.split()[0],
+        "publicTunnelHost": SERVER_CONFIG.get("public_tunnel_host", ""),
+        "tokenRequired": True,
+        "listenersOnline": len([s for s in signals if not s.get("isGhost")])
+    }
+    if include_token:
+        server_meta["token"] = SERVER_CONFIG.get("echo_token", "")
+
     return {
         "status": "ok",
         "serverTime": int(now_sec),
+        "serverMeta": server_meta,
+        "myDeviceId": for_device_id or "",
         "signals": signals,
         "capsules": capsules,
         "eveningTraces": evening_traces,
@@ -1312,15 +1355,99 @@ def build_state_payload(for_device_id: str = None):
     }
 
 
-def _load_template(name: str) -> str:
-    tpl_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "templates", name)
+def build_evening_playlist(limit: int = 25):
+    """Плейлист вечера: уникальные треки из истории прослушиваний с ссылками на плееры."""
+    limit = max(1, min(int(limit or 25), 60))
     try:
-        with open(tpl_path, "r", encoding="utf-8") as f:
-            return f.read()
+        with DB_LOCK:
+            conn = get_db_connection()
+            conn.row_factory = sqlite3.Row
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT artist, title, persona_title, zone_name, played_at FROM listening_history "
+                "ORDER BY id DESC LIMIT 200"
+            )
+            rows = cur.fetchall()
+            conn.close()
     except Exception as e:
+        logger.debug("playlist query error: %s", e)
+        rows = []
+
+    seen = set()
+    tracks = []
+    for row in rows:
+        artist = sanitize_text(row["artist"], MAX_TEXT_LEN)
+        title = sanitize_text(row["title"], MAX_TEXT_LEN)
+        if is_junk_track(artist, title):
+            continue
+        key = (artist.lower(), title.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        query = urllib.parse.quote(f"{artist} {title}".strip())
+        tracks.append({
+            "artist": artist,
+            "title": title,
+            "personaTitle": sanitize_text(row["persona_title"], 80) or "Ночной слушатель",
+            "zoneName": sanitize_text(row["zone_name"], 80) or "Вечерняя улица",
+            "playedAt": sanitize_text(row["played_at"], 16),
+            "yandexUrl": f"https://music.yandex.ru/search?text={query}",
+            "appleUrl": f"https://music.apple.com/ru/search?term={query}",
+            "vkUrl": f"https://vk.com/audio?q={query}"
+        })
+        if len(tracks) >= limit:
+            break
+
+    if tracks:
+        lines = [
+            f"{i + 1}. {t['artist']} — {t['title']} ({t['personaTitle']})"
+            for i, t in enumerate(tracks)
+        ]
+        text = "✦ Плейлист моего вечера • ЭХО ✦\n\n" + "\n".join(lines)
+    else:
+        text = "✦ Плейлист моего вечера • ЭХО ✦\n\nВ эфире пока нет треков."
+
+    return {
+        "status": "ok",
+        "title": "Плейлист вечера",
+        "generatedAt": int(time.time()),
+        "count": len(tracks),
+        "tracks": tracks,
+        "text": text
+    }
+
+
+_TEMPLATE_CACHE = {}
+_TEMPLATE_LOCK = threading.Lock()
+
+
+def _load_template(name: str) -> str:
+    """Читает шаблон с кэшем по mtime: правки в templates/ подхватываются без рестарта."""
+    tpl_path = os.path.join(BASE_DIR, "templates", name)
+    try:
+        mtime = os.path.getmtime(tpl_path)
+    except OSError as e:
         logger.warning("Template %s not found: %s", name, e)
         return f"<h1>Template {name} not found</h1>"
 
+    with _TEMPLATE_LOCK:
+        cached = _TEMPLATE_CACHE.get(name)
+        if cached and cached[0] == mtime:
+            return cached[1]
+
+    try:
+        with open(tpl_path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except Exception as e:
+        logger.warning("Template %s read error: %s", name, e)
+        return f"<h1>Template {name} not found</h1>"
+
+    with _TEMPLATE_LOCK:
+        _TEMPLATE_CACHE[name] = (mtime, text)
+    return text
+
+
+# Прогреваем кэш при старте (и падаем в понятный текст, если шаблона нет)
 DASHBOARD_HTML = _load_template("dashboard.html")
 PWA_HTML = _load_template("pwa.html")
 
@@ -1329,17 +1456,87 @@ PWA_HTML = _load_template("pwa.html")
 
 
 class EchoRequestHandler(BaseHTTPRequestHandler):
+    server_version = "EchoRadar/" + SERVER_VERSION
+    sys_version = ""
+
     def log_message(self, format, *args):
+        # Собственный логгер ниже; стандартный HTTP-лог отключён, чтобы не шуметь.
         return
+
+    # --- Определение клиента (прямой LAN или публичный туннель) ---
+
+    def _client_ip(self) -> str:
+        forwarded = (self.headers.get("CF-Connecting-IP") or "").strip()
+        if not forwarded:
+            xff = (self.headers.get("X-Forwarded-For") or "").strip()
+            forwarded = xff.split(",")[0].strip() if xff else ""
+        if forwarded:
+            try:
+                return str(ipaddress.ip_address(forwarded))
+            except ValueError:
+                pass
+        return str(getattr(self, "client_address", ("",))[0] or "")
+
+    def _is_proxied(self) -> bool:
+        """Запрос пришёл через туннель/прокси (Cloudflare, ngrok, обратный прокси)."""
+        return bool(
+            self.headers.get("CF-Connecting-IP")
+            or self.headers.get("CF-Ray")
+            or self.headers.get("X-Forwarded-For")
+            or self.headers.get("X-Real-IP")
+            or self.headers.get("Forwarded")
+        )
+
+    def _is_local_client(self) -> bool:
+        """Прямой клиент домашней сети. Туннельный трафик локальным НЕ считается,
+        даже если cloudflared подключается с 127.0.0.1."""
+        if self._is_proxied():
+            return False
+        ip = self._client_ip()
+        if ip in ("", "localhost"):
+            return True
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            return False
+        return bool(addr.is_loopback or addr.is_private)
+
+    # --- Ответы ---
+
+    def _base_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Referrer-Policy", "no-referrer")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Permissions-Policy", "geolocation=(self), camera=(), microphone=()")
+        self.send_header("X-Robots-Tag", "noindex, nofollow")
+
+    def _same_origin(self) -> str:
+        """CORS только для своего же origin: пульт/сонар не должны читаться чужими сайтами."""
+        origin = (self.headers.get("Origin") or "").strip()
+        if not origin:
+            return ""
+        try:
+            origin_host = urllib.parse.urlparse(origin).netloc.lower()
+        except Exception:
+            return ""
+        host = (self.headers.get("Host") or "").strip().lower()
+        return origin if origin_host and origin_host == host else ""
+
+    def _send_cors(self):
+        allowed = self._same_origin()
+        if allowed:
+            self.send_header("Access-Control-Allow-Origin", allowed)
+            self.send_header("Vary", "Origin")
 
     def _send_json(self, payload, status=200):
         raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors()
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept, X-Echo-Token")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept, X-Echo-Token, X-Device-Id")
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self._base_headers()
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
@@ -1349,81 +1546,169 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
-        token = SERVER_CONFIG.get("echo_token", "")
+        csp = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' https://unpkg.com; "
+            "style-src 'self' 'unsafe-inline' https://unpkg.com; "
+            "img-src 'self' data: blob: https:; "
+            "connect-src 'self'; "
+            "font-src 'self' data:; "
+            "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+        )
+        self.send_header("Content-Security-Policy", csp)
+        token = str(SERVER_CONFIG.get("echo_token", "") or "")
         if token:
-            self.send_header("Set-Cookie", f"echo_token={token}; Path=/; SameSite=Lax")
+            cookie = f"echo_token={token}; Path=/; SameSite=Lax; HttpOnly; Max-Age=31536000"
+            if self.headers.get("X-Forwarded-Proto", "").lower() == "https":
+                cookie += "; Secure"
+            self.send_header("Set-Cookie", cookie)
+        self._base_headers()
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
 
+    # --- Авторизация ---
+
+    def _cookie_token(self) -> str:
+        cookie_header = self.headers.get("Cookie", "")
+        for part in cookie_header.split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == "echo_token":
+                return value.strip()
+        return ""
+
     def _check_token(self) -> bool:
-        """Проверяет токен для POST-запросов (авторизация LAN и заголовков)."""
-        # Всегда разрешаем запросы из локальной сети и loopback
-        client_ip = getattr(self, "client_address", [""])[0]
-        if client_ip in ("127.0.0.1", "::1", "localhost") or            client_ip.startswith("192.168.") or client_ip.startswith("10.") or            client_ip.startswith("172."):
+        """Проверяет токен. Прямые клиенты LAN/loopback проходят без токена,
+        а весь трафик через публичный туннель обязан предъявить X-Echo-Token,
+        cookie echo_token или ?token=..."""
+        if self._is_local_client():
             return True
 
-        expected = SERVER_CONFIG.get("echo_token", "")
+        expected = str(SERVER_CONFIG.get("echo_token", "") or "").strip()
         if not expected:
             return True
 
-        provided = self.headers.get("X-Echo-Token", "") or self.headers.get("X-API-Key", "")
-        if provided in (expected, "1c13ee8697755fdc4518013ea2fd6996"):
-            return True
+        candidates = [
+            (self.headers.get("X-Echo-Token") or "").strip(),
+            (self.headers.get("X-API-Key") or "").strip(),
+            self._cookie_token(),
+        ]
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+        candidates.append((query.get("token", [""])[0] or "").strip())
 
-        cookie_header = self.headers.get("Cookie", "")
-        if f"echo_token={expected}" in cookie_header or "echo_token=1c13ee8697755fdc4518013ea2fd6996" in cookie_header:
-            return True
-        return False
+        return any(c and hmac.compare_digest(c, expected) for c in candidates)
 
     def do_OPTIONS(self):
         self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self._send_cors()
         self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept, X-Echo-Token")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Accept, X-Echo-Token, X-Device-Id")
         self.end_headers()
 
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        client_ip = self._client_ip()
+
+        if path == "/api/health":
+            self._send_json({
+                "status": "ok",
+                "version": SERVER_VERSION,
+                "uptimeSec": int(time.time() - SERVER_STARTED_AT),
+                "hasAi": bool(str(SERVER_CONFIG.get("gemini_api_key", "")).strip())
+            })
+            return
+
+        if path == "/favicon.ico":
+            self.send_response(204)
+            self._base_headers()
+            self.end_headers()
+            return
 
         if path.startswith("/api/cover/"):
             target_id = path[len("/api/cover/"):]
+            if not rate_limit_allow(client_ip, STATE_RATE_LIMIT):
+                self._send_json({"status": "error", "message": "Too many requests"}, status=429)
+                return
             if target_id in DEVICE_COVERS:
                 mime_type, cover_raw = DEVICE_COVERS[target_id]
                 self.send_response(200)
                 self.send_header("Content-Type", mime_type)
-                self.send_header("Access-Control-Allow-Origin", "*")
+                self._send_cors()
                 self.send_header("Cache-Control", "public, max-age=3600")
+                self._base_headers()
                 self.send_header("Content-Length", str(len(cover_raw)))
                 self.end_headers()
                 self.wfile.write(cover_raw)
             else:
                 self.send_response(404)
+                self._base_headers()
                 self.end_headers()
-        elif path == "/api/state":
+            return
+
+        if path == "/api/state":
+            if not rate_limit_allow(client_ip, STATE_RATE_LIMIT):
+                self._send_json({"status": "error", "message": "Too many requests"}, status=429)
+                return
+            if not self._check_token():
+                self._send_json({"status": "error", "message": "Unauthorized", "authRequired": True}, status=401)
+                return
             query = urllib.parse.parse_qs(parsed.query)
             dev_id = query.get("deviceId", [None])[0] or self.headers.get("X-Device-Id")
-            self._send_json(build_state_payload(for_device_id=dev_id))
-        elif path in ("/", "/index.html"):
+            dev_id = sanitize_text(dev_id, 80) if dev_id else None
+            self._send_json(build_state_payload(for_device_id=dev_id, include_token=self._is_local_client()))
+            return
+
+        if path == "/api/playlist":
+            if not rate_limit_allow(client_ip, STATE_RATE_LIMIT):
+                self._send_json({"status": "error", "message": "Too many requests"}, status=429)
+                return
+            if not self._check_token():
+                self._send_json({"status": "error", "message": "Unauthorized", "authRequired": True}, status=401)
+                return
+            query = urllib.parse.parse_qs(parsed.query)
+            try:
+                limit = int(query.get("limit", ["25"])[0])
+            except (TypeError, ValueError):
+                limit = 25
+            self._send_json(build_evening_playlist(limit=limit))
+            return
+
+        if path in ("/", "/index.html"):
             self._send_html(_load_template("dashboard.html"))
-        elif path in ("/app", "/pwa"):
+            return
+        if path in ("/app", "/pwa"):
             self._send_html(_load_template("pwa.html"))
-        else:
-            self._send_json({"status": "ok", "endpoint": path})
+            return
+
+        self._send_json({"status": "error", "message": "Not found", "endpoint": path}, status=404)
 
     def do_POST(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        client_ip = self._client_ip()
 
         # Защищённые эндпоинты требуют токен
-        PROTECTED_PATHS = {"/api/signal", "/api/react", "/api/drop_capsule",
-                           "/api/delete_signal", "/api/save_config", "/api/bump_encounter"}
+        PROTECTED_PATHS = {
+            "/api/signal", "/api/react", "/api/drop_capsule", "/api/delete_signal",
+            "/api/delete_capsule", "/api/save_config", "/api/bump_encounter",
+            "/api/needle_sync", "/api/send_warmth", "/api/wave_impulse",
+        }
         if path in PROTECTED_PATHS and not self._check_token():
-            self._send_json({"status": "error", "message": "Unauthorized"}, status=401)
+            self._send_json({"status": "error", "message": "Unauthorized", "authRequired": True}, status=401)
             return
 
-        length = int(self.headers.get("Content-Length", 0))
+        if not rate_limit_allow(client_ip, WRITE_RATE_LIMIT):
+            self._send_json({"status": "error", "message": "Too many requests"}, status=429)
+            return
+
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            length = 0
+        if length > MAX_BODY_BYTES:
+            self._send_json({"status": "error", "message": "Payload too large"}, status=413)
+            return
         body_raw = self.rfile.read(length).decode("utf-8", errors="ignore") if length > 0 else "{}"
         try:
             data = json.loads(body_raw)
@@ -1432,25 +1717,26 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
             data = {}
 
         if path == "/api/signal":
-            dev_id = str(data.get("id") or f"dev_{int(time.time())}")
-            artist = str(data.get("artist") or "Неизвестный артист").strip()
-            title = str(data.get("title") or "Без названия").strip()
-            source_name = str(data.get("sourceName") or "Android ЭХО")
-            zone_name = str(data.get("zoneName") or "Вечерняя улица")
+            dev_id = sanitize_text(data.get("id") or f"dev_{int(time.time())}", 80)
+            artist, title = normalize_track_fields(data.get("artist"), data.get("title"))
+            source_name = sanitize_text(data.get("sourceName") or "Android ЭХО", 60)
+            zone_name = normalize_zone(data.get("zoneName"))
 
-            lower_title = title.lower()
-            lower_artist = artist.lower()
-            if any(bad in lower_title or bad in lower_artist for bad in ["chrome-extension", "moz-extension", "http://", "https://", ".html", "devtools", "about:blank"]):
-                logger.info("Filtered garbage signal from %s: %s — %s", dev_id, artist, title)
-                self.send_json(200, {"status": "ignored", "reason": "non_music_garbage"})
+            # Служебные вкладки браузеров и пустые названия не должны попадать в эфир
+            if is_junk_track(artist, title):
+                logger.info("🚫 Служебный медиа-поток отклонён: %r — %r", artist, title)
+                self._send_json({"status": "ignored", "reason": "junk_track", "artist": artist, "title": title})
                 return
 
             cover_b64 = data.get("coverBase64")
             if cover_b64:
                 try:
                     c_bytes = base64.b64decode(cover_b64)
-                    c_mime = "image/png" if c_bytes.startswith(b"\x89PNG") else "image/jpeg"
-                    DEVICE_COVERS[dev_id] = (c_mime, c_bytes)
+                    if 0 < len(c_bytes) <= MAX_COVER_BYTES:
+                        c_mime = "image/png" if c_bytes.startswith(b"\x89PNG") else "image/jpeg"
+                        DEVICE_COVERS[dev_id] = (c_mime, c_bytes)
+                    else:
+                        logger.debug("coverBase64 слишком большой (%d байт), пропущен", len(c_bytes))
                 except Exception as e:
                     logger.debug("coverBase64 decode error: %s", e)
 
@@ -1460,7 +1746,7 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
                 curated = future.result(timeout=5.0)
             except Exception as e:
                 logger.warning("persona future timed out: %s", e)
-                curated = generate_curated_persona.__wrapped__ if hasattr(generate_curated_persona, '__wrapped__') else {
+                curated = {
                     "personaTitle": "Архивариус забытых кассет",
                     "moodLabel": "Теплый винил",
                     "personaObservation": "Слушает музыку в вечерней тишине.",
@@ -1468,8 +1754,8 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
                     "avatarPetals": 6,
                     "compatibilityPercent": 88
                 }
-            persona_title = str(data.get("personaTitle") or curated["personaTitle"])
-            persona_obs = str(data.get("personaObservation") or curated["personaObservation"])
+            persona_title = str(curated["personaTitle"])
+            persona_obs = str(curated["personaObservation"])
             mood_label = str(curated["moodLabel"])
             color_hex = ensure_opaque_color(int(curated["colorHex"]))
             avatar_petals = int(curated["avatarPetals"])
@@ -1516,18 +1802,18 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
             self._send_json(payload)
 
         elif path == "/api/save_config":
-            k = str(data.get("gemini_api_key", "")).strip()
+            k = sanitize_text(data.get("gemini_api_key", ""), 200)
             SERVER_CONFIG["gemini_api_key"] = k
             save_config(SERVER_CONFIG)
             logger.info("⚙️ Ключ ИИ-куратора сохранен (%s).", 'Активен' if k else 'Сброшен')
             self._send_json({"status": "ok", "has_key": bool(k)})
 
         elif path == "/api/react":
-            target_id = str(data.get("targetId") or data.get("signalId") or "")
-            sender_id = str(data.get("senderId") or "unknown_sender")
-            symbol = str(data.get("symbol") or "✦")
-            custom_msg = str(data.get("message") or "").strip()
-            rec_id = int(time.time() * 1000)
+            target_id = sanitize_text(data.get("targetId") or data.get("signalId") or "", 80)
+            sender_id = sanitize_text(data.get("senderId") or "unknown_sender", 80)
+            symbol = sanitize_text(data.get("symbol") or "✦", 8)
+            custom_msg = sanitize_text(data.get("message") or "", MAX_MESSAGE_LEN)
+            rec_id = next_event_id()
             msg = custom_msg if custom_msg else f"Спасибо за созвучие {symbol}"
 
             with REACTIONS_LOCK:
@@ -1565,16 +1851,16 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
             self._send_json(build_state_payload(for_device_id=sender_id))
 
         elif path == "/api/drop_capsule":
-            cap_id = f"cap_{int(time.time() * 1000)}"
-            creator_id = str(data.get("creatorId") or "local_user")
-            artist = str(data.get("artist") or "Sirotkin")
-            title = str(data.get("title") or "Август")
-            zone_name = str(data.get("zoneName") or "Вечерняя улица")
-            secret_msg = str(data.get("secretMessage") or "Слушай этот момент здесь...")
+            cap_id = f"cap_{next_event_id()}"
+            creator_id = sanitize_text(data.get("creatorId") or "local_user", 80)
+            artist = sanitize_text(data.get("artist") or "Sirotkin", MAX_TEXT_LEN)
+            title = sanitize_text(data.get("title") or "Август", MAX_TEXT_LEN)
+            zone_name = normalize_zone(data.get("zoneName"))
+            secret_msg = sanitize_text(data.get("secretMessage") or "Слушай этот момент здесь...", MAX_MESSAGE_LEN)
             is_venue = 1 if data.get("isVenue") else 0
-            venue_name = str(data.get("venueName") or "").strip()
-            min_resonance = int(data.get("minResonance") or (75 if is_venue else 0))
-            secret_perk = str(data.get("secretPerk") or "").strip()
+            venue_name = sanitize_text(data.get("venueName") or "", 80)
+            min_resonance = max(0, min(100, int(data.get("minResonance") or (75 if is_venue else 0))))
+            secret_perk = sanitize_text(data.get("secretPerk") or "", 200)
 
             curated = generate_curated_persona(artist, title, creator_id)
             mood_label = str(data.get("moodLabel") or curated["moodLabel"])
@@ -1610,8 +1896,8 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
             self._send_json(build_state_payload(for_device_id=creator_id))
 
         elif path == "/api/bump_encounter":
-            target_id = str(data.get("targetId") or "")
-            sender_id = str(data.get("senderId") or "")
+            target_id = sanitize_text(data.get("targetId") or "", 80)
+            sender_id = sanitize_text(data.get("senderId") or "", 80)
             with DB_LOCK:
                 conn = get_db_connection()
                 cur = conn.cursor()
@@ -1625,13 +1911,13 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
             self._send_json(build_state_payload(for_device_id=sender_id))
 
         elif path == "/api/needle_sync":
-            target_id = str(data.get("targetId") or "")
-            sender_id = str(data.get("senderId") or "anon")
+            target_id = sanitize_text(data.get("targetId") or "", 80)
+            sender_id = sanitize_text(data.get("senderId") or "anon", 80)
             now_ts = time.time()
             NEEDLE_SYNCS[sender_id] = {"targetId": target_id, "time": now_ts}
             with REACTIONS_LOCK:
                 RECENT_REACTIONS.append({
-                    "id": int(now_ts * 1000),
+                    "id": next_event_id(),
                     "targetId": target_id,
                     "senderId": sender_id,
                     "symbol": "∿",
@@ -1642,11 +1928,14 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
             self._send_json({"status": "ok", "synced": True, "targetId": target_id})
 
         elif path == "/api/send_warmth":
-            target_id = str(data.get("targetId") or "")
-            sender_id = str(data.get("senderId") or "anon")
-            patch_x = float(data.get("x", 0.5))
-            patch_y = float(data.get("y", 0.5))
-            p_id = f"warmth_{int(time.time() * 1000)}"
+            target_id = sanitize_text(data.get("targetId") or "", 80)
+            sender_id = sanitize_text(data.get("senderId") or "anon", 80)
+            try:
+                patch_x = max(0.0, min(1.0, float(data.get("x", 0.5))))
+                patch_y = max(0.0, min(1.0, float(data.get("y", 0.5))))
+            except (TypeError, ValueError):
+                patch_x, patch_y = 0.5, 0.5
+            p_id = f"warmth_{next_event_id()}"
             THERMAL_PATCHES.append({
                 "id": p_id,
                 "targetId": target_id,
@@ -1655,27 +1944,32 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
                 "y": patch_y,
                 "time": time.time()
             })
+            # Не копим бесконечную историю тепловых пятен
+            if len(THERMAL_PATCHES) > 40:
+                del THERMAL_PATCHES[:-40]
             logger.info("♨️ ТЕПЛОВОЙ СЛЕД от %s в точке (%.2f, %.2f)", sender_id, patch_x, patch_y)
             self._send_json({"status": "ok", "patchId": p_id})
 
         elif path == "/api/wave_impulse":
-            target_id = str(data.get("targetId") or "")
-            sender_id = str(data.get("senderId") or "anon")
+            target_id = sanitize_text(data.get("targetId") or "", 80)
+            sender_id = sanitize_text(data.get("senderId") or "anon", 80)
             now_ts = time.time()
             with REACTIONS_LOCK:
                 RECENT_REACTIONS.append({
-                    "id": int(now_ts * 1000),
+                    "id": next_event_id(),
                     "targetId": target_id,
                     "senderId": sender_id,
                     "symbol": "🌊",
                     "message": "Звуковой импульс сквозь ночной эфир (Камень в воду)",
                     "time": now_ts
                 })
+                if len(RECENT_REACTIONS) > 30:
+                    del RECENT_REACTIONS[:-30]
             logger.info("🌊 ИМПУЛЬС ВОЛНЫ от %s -> %s", sender_id, target_id)
             self._send_json({"status": "ok"})
 
         elif path == "/api/delete_signal":
-            target_id = str(data.get("targetId") or data.get("id") or "")
+            target_id = sanitize_text(data.get("targetId") or data.get("id") or "", 80)
             with DB_LOCK:
                 conn = get_db_connection()
                 cur = conn.cursor()
@@ -1685,8 +1979,20 @@ class EchoRequestHandler(BaseHTTPRequestHandler):
             logger.info("🗑️ СИГНАЛ %s удален из эфира", target_id)
             self._send_json(build_state_payload())
 
+        elif path == "/api/delete_capsule":
+            target_id = sanitize_text(data.get("targetId") or data.get("id") or "", 80)
+            with DB_LOCK:
+                conn = get_db_connection()
+                cur = conn.cursor()
+                cur.execute("DELETE FROM capsules WHERE id = ?", (target_id,))
+                deleted = cur.rowcount or 0
+                conn.commit()
+                conn.close()
+            logger.info("🗑️ ТАЙНИК %s удален (строк: %d)", target_id, deleted)
+            self._send_json({"status": "ok", "deleted": deleted, "state": build_state_payload()})
+
         else:
-            self._send_json(build_state_payload())
+            self._send_json({"status": "error", "message": "Unknown endpoint", "endpoint": path}, status=404)
 
 
 def start_udp_broadcast():
@@ -1739,12 +2045,18 @@ def start_windows_media_listener():
                 app_id = session.source_app_user_model_id or "ПК плеер"
                 app_name = app_id.split(".")[-1].split("!")[-1] or "Windows"
 
+                # Веб-плееры отдают заголовок вкладки «Artist | Track (id)» —
+                # разбираем его, а не выбрасываем трек.
+                artist, title = normalize_track_fields(artist, title)
+
                 if not artist and not title:
                     return
 
-                lower_title = title.lower()
-                lower_artist = artist.lower()
-                if any(bad in lower_title or bad in lower_artist for bad in ["chrome-extension", "http://", "https://", ".html", "extension://", "devtools"]):
+                # Служебные вкладки браузеров и пустые названия не попадают в эфир
+                if is_junk_track(artist, title):
+                    if (artist, title) != last_logged:
+                        last_logged = (artist, title)
+                        logger.info("🚫 SMTC: служебный поток проигнорирован — %r / %r", artist, title)
                     return
 
                 curr = (artist, title)
@@ -1817,6 +2129,9 @@ def start_windows_media_listener():
 
 
 class EchoServer(ThreadingHTTPServer):
+    daemon_threads = True
+    allow_reuse_address = True
+
     def handle_error(self, request, client_address):
         # Подавляем шумные разрывы соединений от мобильных клиентов (WinError 10054 / ConnectionResetError)
         ex_type, ex_val, _ = sys.exc_info()
@@ -1827,17 +2142,20 @@ class EchoServer(ThreadingHTTPServer):
 def main():
     init_db()
     start_udp_broadcast()
-    start_windows_media_listener()
+    if os.environ.get("ECHO_DISABLE_SMTC", "").strip() not in ("1", "true", "yes"):
+        start_windows_media_listener()
     local_ip = get_local_ip()
     echo_token = SERVER_CONFIG.get("echo_token", "")
     server = EchoServer(("0.0.0.0", HTTP_PORT), EchoRequestHandler)
     logger.info("=" * 66)
-    logger.info(" 📡 ЭХО (Echo Radar) — Ночной акустический атлас запущен!")
+    logger.info(" 📡 ЭХО (Echo Radar) v%s — Ночной акустический атлас запущен!", SERVER_VERSION)
     logger.info(" 🌐 Локальный адрес в сети : http://%s:%d", local_ip, HTTP_PORT)
     logger.info(" 📱 Сенсорный Сонар и Карта : http://%s:%d/app", local_ip, HTTP_PORT)
     logger.info(" ⚙️  Пульт управления и ИИ  : http://%s:%d/", local_ip, HTTP_PORT)
+    logger.info(" 🩺 Проверка состояния       : http://%s:%d/api/health", local_ip, HTTP_PORT)
     if echo_token:
         logger.info(" 🔑 Echo Token (для Android) : %s", echo_token)
+    logger.info(" 🔒 Туннель требует токен; локальная сеть — без токена")
     logger.info("=" * 66)
     try:
         server.serve_forever()

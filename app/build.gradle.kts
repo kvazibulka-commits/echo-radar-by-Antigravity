@@ -12,8 +12,8 @@ android {
         applicationId = "ru.echo.radar"
         minSdk = 26
         targetSdk = 34
-        versionCode = 15
-        versionName = "0.3.10-v15-video-fixes"
+        versionCode = 8
+        versionName = "0.4.0-alpha"
 
         vectorDrawables {
             useSupportLibrary = true
@@ -55,7 +55,6 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
-    debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("androidx.compose.material3:material3")
 
     // Сеть

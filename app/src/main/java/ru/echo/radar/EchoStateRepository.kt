@@ -1,11 +1,15 @@
 package ru.echo.radar
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.provider.Settings
 import android.util.Log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import okhttp3.*
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -18,12 +22,7 @@ data class PlayingTrack(
     val title: String,
     val sourceApp: String,
     val poeticPersona: String,
-    val mood: String,
-    val isPlaying: Boolean = false,
-    val coverUrl: String? = null,
-    val genre: String = "Анализ звука...",
-    val bpm: Int = 120,
-    val camelotKey: String = "8A"
+    val mood: String
 )
 
 data class NearbyEchoSignal(
@@ -45,7 +44,8 @@ data class NearbyEchoSignal(
     val coverUrl: String? = null,
     val bpm: Int = 120,
     val camelotKey: String = "8A",
-    val genre: String = "indie"
+    val genre: String = "indie",
+    val avatarPetals: Int = 6
 )
 
 data class ThermalPatch(
@@ -76,6 +76,7 @@ data class EchoCapsule(
     val zoneName: String,
     val secretMessage: String,
     val distanceLabel: String,
+    val distanceMeters: Int = 65,
     val angleDeg: Float,
     val ringFactor: Float,
     val compatibility: Int,
@@ -110,7 +111,8 @@ object EchoStateRepository {
     private val _serverHost = MutableStateFlow("http://192.168.0.214:8080")
     val serverHost: StateFlow<String> = _serverHost.asStateFlow()
 
-    private val _echoToken = MutableStateFlow("1c13ee8697755fdc4518013ea2fd6996")
+    // Токен не хардкодится: его выдают в консоли echo_server.py и вводят в ⚙ Сервер.
+    private val _echoToken = MutableStateFlow("")
     val echoToken: StateFlow<String> = _echoToken.asStateFlow()
 
     private var _appContext: Context? = null
@@ -159,6 +161,34 @@ object EchoStateRepository {
     private val _incomingReaction = MutableStateFlow<IncomingReaction?>(null)
     val incomingReaction: StateFlow<IncomingReaction?> = _incomingReaction.asStateFlow()
 
+    // ── Доступ к уведомлениям (без него ЭХО не видит Яндекс Музыку) ──
+    private val _notificationAccess = MutableStateFlow(false)
+    val notificationAccess: StateFlow<Boolean> = _notificationAccess.asStateFlow()
+
+    // ── Доступ к геолокации (нужен для поиска музыки рядом) ──
+    private val _locationAccess = MutableStateFlow(false)
+    val locationAccess: StateFlow<Boolean> = _locationAccess.asStateFlow()
+
+    // ── Обратная связь для ручной трансляции / шаринга ──
+    private val _broadcastFeedback = MutableStateFlow<String?>(null)
+    val broadcastFeedback: StateFlow<String?> = _broadcastFeedback.asStateFlow()
+
+    // ── Запрос открыть ДЕКУ (например, тап по виджету) ──
+    private val _openDeckRequest = MutableStateFlow(false)
+    val openDeckRequest: StateFlow<Boolean> = _openDeckRequest.asStateFlow()
+
+    fun requestOpenDeck() {
+        _openDeckRequest.value = true
+    }
+
+    fun consumeOpenDeckRequest() {
+        _openDeckRequest.value = false
+    }
+
+    fun clearBroadcastFeedback() {
+        _broadcastFeedback.value = null
+    }
+
     private var lastHandledBannerId: Long = 0L
 
     fun dismissIncomingReaction() {
@@ -174,9 +204,7 @@ object EchoStateRepository {
 
     private var pollingJob: Job? = null
     private var lastSentTrack: Pair<String, String>? = null
-    private var lastKeepaliveTime: Long = 0L
     private var consecutiveErrors = 0
-    private val trackArchetypeCache = mutableMapOf<String, Pair<String, String>>()
 
     fun init(context: Context) {
         _appContext = context.applicationContext
@@ -188,10 +216,51 @@ object EchoStateRepository {
             newId
         }
         val savedHost = prefs.getString("server_host", "http://192.168.0.214:8080") ?: "http://192.168.0.214:8080"
-        val savedToken = prefs.getString("echo_token", "1c13ee8697755fdc4518013ea2fd6996") ?: "1c13ee8697755fdc4518013ea2fd6996"
+        val savedToken = prefs.getString("echo_token", "") ?: ""
         _serverHost.value = savedHost
         _echoToken.value = savedToken
+        refreshNotificationAccess(context)
+        refreshLocationAccess(context)
+        startWidgetSync()
         startPolling()
+    }
+
+    /** Домашний виджет «Сейчас играет» повторяет текущий трек без сети и сервисов. */
+    private fun startWidgetSync() {
+        val ctx = _appContext ?: return
+        scope.launch {
+            _currentTrack.collect { track ->
+                EchoWidgetProvider.save(
+                    ctx,
+                    track.title,
+                    track.artist,
+                    track.poeticPersona,
+                    0xFF38BDF8.toInt()
+                )
+            }
+        }
+    }
+
+    /**
+     * Проверяет, выдан ли ЭХО доступ к уведомлениям.
+     * Без него Android не отдаёт медиа-сессии Яндекс Музыки / VK / Spotify.
+     */
+    fun refreshNotificationAccess(context: Context) {
+        val enabled = try {
+            Settings.Secure.getString(context.contentResolver, "enabled_notification_listeners") ?: ""
+        } catch (e: Exception) {
+            ""
+        }
+        _notificationAccess.value = enabled.split(":").any { it.contains(context.packageName) }
+    }
+
+    /** Разрешение на геолокацию: пересчитывается при каждом возврате в приложение. */
+    fun refreshLocationAccess(context: Context) {
+        val fine = context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        val coarse = context.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        _locationAccess.value = fine || coarse
     }
 
     fun setServerHost(host: String, token: String = "") {
@@ -243,92 +312,7 @@ object EchoStateRepository {
         }
     }
 
-    fun sanitizeMusicInfo(rawArtist: String, rawTitle: String): Pair<String, String> {
-        var cleanArtist = rawArtist.trim()
-        var cleanTitle = rawTitle.trim()
-
-        // Проверка на веб-мусор и расширения браузера
-        val lowerT = cleanTitle.lowercase()
-        val lowerA = cleanArtist.lowercase()
-        if (lowerT.contains("chrome-extension") || lowerA.contains("chrome-extension") ||
-            lowerT.contains("moz-extension") || lowerA.contains("moz-extension") ||
-            lowerT.startsWith("http://") || lowerT.startsWith("https://") ||
-            lowerA.startsWith("http://") || lowerA.startsWith("https://") ||
-            lowerT.contains("about:blank") || lowerT.contains("blob:") ||
-            lowerT.endsWith(".html") || lowerT.contains("devtools")
-        ) {
-            return Pair("Ожидание музыки...", "Ожидание звука...")
-        }
-
-        // 0. Если в качестве артиста передано название плеера / сервиса
-        val playerNames = setOf(
-            "яндекс музыка", "yandex music", "vk музыка", "vk music", "вконтакте",
-            "spotify", "звук", "sberzvuk", "youtube music", "youtube", "aimp",
-            "poweramp", "apple music", "музыка", "плеер", "android"
-        )
-        if (playerNames.contains(cleanArtist.lowercase())) {
-            cleanArtist = ""
-        }
-
-        // 1. Очищаем аудио/видео расширения файлов
-        val extRegex = Regex("""\.(mp[34]|opus|m4a|wav|flac|ogg|aac|webm)$""", RegexOption.IGNORE_CASE)
-        cleanTitle = cleanTitle.replace(extRegex, "").trim()
-        cleanArtist = cleanArtist.replace(extRegex, "").trim()
-
-        // 2. Отсекаем сырые числовые хэши (например -1881685913829020041) или системные ID файлов
-        val isRawHash = cleanTitle.matches(Regex("""^-?\d{6,}$""")) ||
-                cleanTitle.matches(Regex("""^(audiotrack|track|file|video|audio|voice)[_\-\d]+$""", RegexOption.IGNORE_CASE))
-
-        if (isRawHash) {
-            cleanTitle = "Локальная запись"
-            if (cleanArtist.isBlank() || cleanArtist.matches(Regex("""^-?\d+$"""))) {
-                cleanArtist = "Неизвестный исполнитель"
-            }
-        }
-
-        // 3. Замена технических подчеркиваний
-        if (cleanTitle.contains("_") && !cleanTitle.contains(" ")) {
-            cleanTitle = cleanTitle.replace("_", " ")
-        }
-        if (cleanArtist.contains("_") && !cleanArtist.contains(" ")) {
-            cleanArtist = cleanArtist.replace("_", " ")
-        }
-
-        // 4. Если артист пустой, но в названии есть разделитель " — " или " - "
-        if (cleanArtist.isBlank() && (cleanTitle.contains(" — ") || cleanTitle.contains(" - "))) {
-            val parts = if (cleanTitle.contains(" — ")) cleanTitle.split(" — ", limit = 2) else cleanTitle.split(" - ", limit = 2)
-            if (parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank()) {
-                cleanArtist = parts[0].trim()
-                cleanTitle = parts[1].trim()
-            }
-        }
-
-        if (cleanArtist.isBlank()) cleanArtist = "Неизвестный исполнитель"
-        if (cleanTitle.isBlank()) cleanTitle = "Без названия"
-
-        return Pair(cleanArtist, cleanTitle)
-    }
-
-    fun isNotificationAccessGranted(context: Context): Boolean {
-        return try {
-            val pkgName = context.packageName
-            val flat = android.provider.Settings.Secure.getString(
-                context.contentResolver,
-                "enabled_notification_listeners"
-            ) ?: ""
-            flat.contains(pkgName)
-        } catch (_: Exception) {
-            false
-        }
-    }
-
-    fun updateDetectedMusic(artist: String, title: String, packageName: String, isPlaying: Boolean = true) {
-        val (cleanArtist, cleanTitle) = sanitizeMusicInfo(artist, title)
-        if (cleanTitle.startsWith("Ожидание") || cleanArtist.startsWith("Ожидание")) {
-            Log.d("EchoMedia", "Пропуск технического или пустого аудиосигнала ($title)")
-            return
-        }
-
+    fun updateDetectedMusic(artist: String, title: String, packageName: String) {
         val readableSource = when {
             packageName.contains("yandex", ignoreCase = true) -> "Яндекс Музыка"
             packageName.contains("vkontakte", ignoreCase = true) || packageName.contains("vk.music", ignoreCase = true) -> "VK Музыка"
@@ -342,47 +326,105 @@ object EchoStateRepository {
             else -> "Плеер Android"
         }
 
-        val cur = _currentTrack.value
-        val inferredGenre = if (cleanArtist.isNotBlank() && !cleanArtist.startsWith("Ожидание")) {
-            AlbumArtResolver.detectLocalGenre(cleanArtist, cleanTitle)
-        } else "Анализ звука..."
-        val (infBpm, infCam) = when (inferredGenre) {
-            "Symphonic Metal", "Metal" -> Pair(135, "9A")
-            "Post-Punk" -> Pair(140, "9A")
-            "Trip-Hop" -> Pair(75, "8A")
-            "Electronic" -> Pair(126, "11A")
-            "Rock", "Hard Rock" -> Pair(124, "8A")
-            "Classical" -> Pair(80, "6A")
-            "Jazz" -> Pair(95, "4A")
-            "Hip-Hop" -> Pair(92, "7A")
-            else -> Pair(118, "8B")
-        }
+        val newArtist = artist.ifBlank { "Неизвестный исполнитель" }
+        val newTitle = title.ifBlank { "Без названия" }
 
-        val trackKey = "$cleanArtist::$cleanTitle".lowercase().trim()
-        val (genPersona, genObs) = if (cleanArtist.isNotBlank() && !cleanArtist.startsWith("Ожидание")) {
-            trackArchetypeCache.getOrPut(trackKey) {
-                AlbumArtResolver.generatePoeticArchetype(cleanArtist, cleanTitle, inferredGenre)
-            }
-        } else {
-            Pair("Архивариус ночных шорохов", "Вслушивается в тишину спящего города, ожидая первых звуков музыки.")
-        }
+        // Поллинг медиа-сессий приходит часто: не сбрасываем образ и не шлём дубли
+        val current = _currentTrack.value
+        if (current.artist == newArtist && current.title == newTitle) return
 
-        _currentTrack.value = cur.copy(
-            artist = cleanArtist,
-            title = cleanTitle,
+        _currentTrack.value = PlayingTrack(
+            artist = newArtist,
+            title = newTitle,
             sourceApp = readableSource,
-            poeticPersona = genPersona,
-            mood = "Живое присутствие",
-            isPlaying = isPlaying,
-            genre = inferredGenre,
-            bpm = infBpm,
-            camelotKey = infCam
+            poeticPersona = "Генерируется куратором...",
+            mood = "Живое присутствие"
         )
 
-        if (lastSentTrack != Pair(cleanArtist, cleanTitle) && cleanArtist != "Ожидание музыки...") {
-            lastSentTrack = Pair(cleanArtist, cleanTitle)
-            scope.launch { sendSignalToServer(cleanArtist, cleanTitle, readableSource) }
+        if (lastSentTrack != Pair(newArtist, newTitle)) {
+            lastSentTrack = Pair(newArtist, newTitle)
+            scope.launch { sendSignalToServer(newArtist, newTitle, readableSource) }
         }
+    }
+
+    // ── Ручная трансляция трека (в т.ч. из Яндекс Музыки) ──
+
+    fun broadcastTrack(
+        artist: String,
+        title: String,
+        sourceName: String = "Яндекс Музыка",
+        onResult: ((Boolean) -> Unit)? = null
+    ) {
+        val cleanArtist = artist.trim().ifBlank { "Неизвестный исполнитель" }.take(120)
+        val cleanTitle = title.trim().ifBlank { "Без названия" }.take(160)
+
+        _currentTrack.value = PlayingTrack(
+            artist = cleanArtist,
+            title = cleanTitle,
+            sourceApp = sourceName,
+            poeticPersona = "Генерируется куратором...",
+            mood = "Живое присутствие"
+        )
+        lastSentTrack = Pair(cleanArtist, cleanTitle)
+
+        scope.launch {
+            val ok = sendSignalToServer(cleanArtist, cleanTitle, sourceName)
+            withContext(Dispatchers.Main) { onResult?.invoke(ok) }
+        }
+    }
+
+    /**
+     * Понимает текст, которым поделились из Яндекс Музыки:
+     * «Artist — Track», ссылку на трек, строку вида «Слушай «Artist — Track» на Яндекс Музыке».
+     */
+    fun broadcastFromSharedText(raw: String, onResult: ((Boolean, String) -> Unit)? = null) {
+        val parsed = parseArtistTitle(raw)
+        if (parsed == null) {
+            _broadcastFeedback.value = "Не удалось разобрать трек. Вставьте «Исполнитель — Название»."
+            onResult?.invoke(false, "parse_failed")
+            return
+        }
+        val (artist, title) = parsed
+        broadcastTrack(artist, title, "Яндекс Музыка") { ok ->
+            _broadcastFeedback.value = if (ok) {
+                "В эфире: $artist — $title"
+            } else {
+                "Не удалось отправить трек — проверьте соединение и токен"
+            }
+            onResult?.invoke(ok, "$artist — $title")
+        }
+    }
+
+    private fun cleanTrackPart(value: String): String {
+        return value
+            .replace(Regex("\\s+"), " ")
+            .replace(Regex("^(слушай|слушайте|трек|песня)[:\\s]+", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s+(на|в)\\s+(яндекс\\s*музыке|yandex\\s*music).*$", RegexOption.IGNORE_CASE), "")
+            .trim()
+            .trim('«', '»', '"', '“', '”', '\'', '`')
+            .trim()
+    }
+
+    private fun parseArtistTitle(raw: String): Pair<String, String>? {
+        if (raw.isBlank()) return null
+        val withoutUrls = raw
+            .replace(Regex("https?://\\S+", RegexOption.IGNORE_CASE), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        for (text in listOf(withoutUrls, raw)) {
+            if (text.isBlank()) continue
+            for (separator in listOf(" — ", " – ", " - ", "—", "–")) {
+                val index = text.indexOf(separator)
+                if (index <= 0) continue
+                val artist = cleanTrackPart(text.substring(0, index))
+                val title = cleanTrackPart(text.substring(index + separator.length))
+                if (artist.isNotBlank() && title.isNotBlank()) {
+                    return artist.take(120) to title.take(160)
+                }
+            }
+        }
+        return null
     }
 
     // ── Построение URL с автоопределением http/https ──
@@ -427,19 +469,6 @@ object EchoStateRepository {
             }
 
             consecutiveErrors = 0
-
-            // Периодический keepalive (каждые 25 секунд) для поддержания активного статуса на сервере
-            val now = System.currentTimeMillis()
-            val curTrack = _currentTrack.value
-            if (_presenceActive.value && curTrack.artist != "Ожидание музыки..." && curTrack.artist.isNotBlank()) {
-                if (now - lastKeepaliveTime > 25000L) {
-                    lastKeepaliveTime = now
-                    scope.launch {
-                        sendSignalToServer(curTrack.artist, curTrack.title, curTrack.sourceApp)
-                    }
-                }
-            }
-
             val json = JSONObject(body)
 
             // 1. Парсинг живых сигналов слушателей
@@ -482,7 +511,8 @@ object EchoStateRepository {
                             coverUrl = parsedCover,
                             bpm = s.optInt("bpm", 120),
                             camelotKey = s.optString("camelotKey", "8A"),
-                            genre = s.optString("genre", "indie")
+                            genre = s.optString("genre", "indie"),
+                            avatarPetals = s.optInt("avatarPetals", 6)
                         )
                     )
                 }
@@ -517,6 +547,7 @@ object EchoStateRepository {
                             zoneName = c.optString("zoneName", "Вечерняя улица"),
                             secretMessage = c.optString("secretMessage", "Здесь оставлена музыкальная память."),
                             distanceLabel = distLabel,
+                            distanceMeters = distM,
                             angleDeg = c.optDouble("angleDegrees", 120.0).toFloat(),
                             ringFactor = c.optDouble("distanceRatio", 0.5).toFloat(),
                             compatibility = compPercent,
@@ -540,11 +571,7 @@ object EchoStateRepository {
             val myMood = json.optString("myRefinedMood", "")
             if (myPersona.isNotBlank()) {
                 val cur = _currentTrack.value
-                val curKey = "${cur.artist}::${cur.title}".lowercase().trim()
-                if (!trackArchetypeCache.containsKey(curKey) && !cur.artist.startsWith("Ожидание")) {
-                    trackArchetypeCache[curKey] = Pair(myPersona, myMood.ifBlank { cur.mood })
-                    _currentTrack.value = cur.copy(poeticPersona = myPersona, mood = myMood.ifBlank { cur.mood })
-                }
+                _currentTrack.value = cur.copy(poeticPersona = myPersona, mood = myMood.ifBlank { cur.mood })
             }
 
             // 4. Проверка входящих откликов (баннеров)
@@ -552,13 +579,21 @@ object EchoStateRepository {
             if (bannerObj != null) {
                 val bannerId = bannerObj.optLong("id", 0L)
                 val targetId = bannerObj.optString("targetId", "")
-                val isTargetedToMe = targetId == deviceId || targetId.isEmpty() || targetId == "broadcast" || targetId == "all"
-                if (bannerId != 0L && bannerId > lastHandledBannerId && isTargetedToMe) {
+                val senderId = bannerObj.optString("senderId", "")
+                // Публичные цели (сигнал/тайник/широковещательный импульс с ПК) касаются всех,
+                // личные — только адресата. Раньше телефон отбрасывал sig_*/broadcast.
+                val isPublicTarget = targetId == "broadcast" ||
+                    targetId == "all" ||
+                    targetId == "pc_studio_node" ||
+                    targetId.startsWith("sig_") ||
+                    targetId.startsWith("cap_")
+                val isForThisDevice = targetId == deviceId || targetId.isEmpty() || isPublicTarget
+                if (bannerId != 0L && bannerId > lastHandledBannerId && isForThisDevice && senderId != deviceId) {
                     lastHandledBannerId = bannerId
                     _incomingReaction.value = IncomingReaction(
                         id = bannerId,
                         symbol = bannerObj.optString("symbol", "✦"),
-                        senderId = bannerObj.optString("senderId", "Слушатель"),
+                        senderId = senderId.ifBlank { "Слушатель" },
                         message = bannerObj.optString("message", "Вам отправлен импульс"),
                         timestamp = bannerObj.optLong("time", System.currentTimeMillis())
                     )
@@ -646,18 +681,15 @@ object EchoStateRepository {
         }
     }
 
-    private suspend fun sendSignalToServer(artist: String, title: String, sourceName: String) {
+    private suspend fun sendSignalToServer(artist: String, title: String, sourceName: String): Boolean {
         val url = buildUrl("/api/signal")
-        if (url.isBlank() || !_presenceActive.value) return
+        if (url.isBlank() || !_presenceActive.value) return false
 
-        val cur = _currentTrack.value
         val body = JSONObject().apply {
             put("id", deviceId)
             put("artist", artist)
             put("title", title)
             put("sourceName", sourceName)
-            put("personaTitle", cur.poeticPersona)
-            put("genre", cur.genre)
         }.toString()
 
         val token = _echoToken.value
@@ -668,28 +700,41 @@ object EchoStateRepository {
         requestBuilder.addHeader("X-Device-Id", deviceId)
         val request = requestBuilder.build()
 
-        try {
+        return try {
             withContext(Dispatchers.IO) {
                 httpClient.newCall(request).execute()
             }.use { response ->
-                if (response.code == 401) {
-                    _connectionStatus.value = "✗ Неверный токен (401)"
-                    return
-                }
-                if (response.isSuccessful) {
-                    val respBody = response.body?.string() ?: return
-                    val json = JSONObject(respBody)
-                    val myPersona = json.optString("myCuratedPersona", "")
-                    val myMood = json.optString("myRefinedMood", "")
-                    val curKey = "${cur.artist}::${cur.title}".lowercase().trim()
-                    if (myPersona.isNotBlank() && !trackArchetypeCache.containsKey(curKey) && !cur.artist.startsWith("Ожидание")) {
-                        trackArchetypeCache[curKey] = Pair(myPersona, myMood.ifBlank { cur.mood })
-                        _currentTrack.value = cur.copy(poeticPersona = myPersona, mood = myMood.ifBlank { cur.mood })
+                when {
+                    response.code == 401 -> {
+                        _connectionStatus.value = "✗ Неверный токен (401)"
+                        false
                     }
+                    response.isSuccessful -> {
+                        val respBody = response.body?.string()
+                        if (!respBody.isNullOrBlank()) {
+                            try {
+                                val json = JSONObject(respBody)
+                                val myPersona = json.optString("myCuratedPersona", "")
+                                val myMood = json.optString("myRefinedMood", "")
+                                if (myPersona.isNotBlank()) {
+                                    val cur = _currentTrack.value
+                                    _currentTrack.value = cur.copy(
+                                        poeticPersona = myPersona,
+                                        mood = myMood.ifBlank { cur.mood }
+                                    )
+                                }
+                            } catch (e: Exception) {
+                                Log.w("EchoRepo", "Signal response parse: ${e.message}")
+                            }
+                        }
+                        true
+                    }
+                    else -> false
                 }
             }
         } catch (e: Exception) {
             Log.w("EchoRepo", "Signal send failed: ${e.message}")
+            false
         }
     }
 

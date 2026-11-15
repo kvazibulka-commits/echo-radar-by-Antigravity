@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ЭХО · Phase 1 — визуализация дизайна</title>
+<style>
+  :root {
+    --bg:#07090E; --surface:#0D121B; --elevated:#151E2A; --line:#26313E; --line2:#334155;
+    --text:#F2F5F7; --muted:#85909E; --dim:#64748B;
+    --cyan:#00F0FF; --sky:#38BDF8; --amber:#FFB800; --gold:#FFD700;
+    --violet:#A855F7; --green:#34D399; --red:#FF5533;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; padding:34px 28px 60px; background:
+      radial-gradient(900px 500px at 15% -10%, rgba(56,189,248,.12), transparent 60%),
+      radial-gradient(800px 460px at 90% 0%, rgba(168,85,247,.10), transparent 60%),
+      var(--bg);
+    color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+  }
+  .head { max-width:1500px; margin:0 auto 26px; display:flex; justify-content:space-between; align-items:flex-end; gap:20px; flex-wrap:wrap; }
+  .title { font-size:24px; font-weight:900; letter-spacing:3px; color:var(--cyan); }
+  .sub { color:var(--muted); font-size:12.5px; margin-top:4px; max-width:720px; line-height:1.5; }
+  .badge { font-family:ui-monospace,Consolas,monospace; font-size:10px; letter-spacing:1px; color:var(--dim); border:1px solid var(--line2); border-radius:999px; padding:6px 11px; }
+  .stage { max-width:1500px; margin:0 auto; display:flex; gap:26px; align-items:flex-start; justify-content:center; flex-wrap:wrap; }
+  .phone-col { width:392px; }
+  .phone-label { font-family:ui-monospace,Consolas,monospace; font-size:10px; letter-spacing:1.4px; color:var(--dim); margin-bottom:8px; }
+  .phone {
+    width:390px; height:820px; border-radius:34px; border:1px solid #1B2637; background:var(--bg);
+    box-shadow:0 30px 80px rgba(0,0,0,.55), inset 0 0 0 6px #05070B; overflow:hidden;
+    display:flex; flex-direction:column; position:relative;
+  }
+  .statusbar { height:26px; display:flex; justify-content:space-between; align-items:center; padding:0 16px; color:var(--muted); font-size:9px; font-family:ui-monospace,monospace; }
+  .screen { flex:1; overflow:hidden; padding:0 18px; }
+  .topline { display:flex; justify-content:space-between; align-items:flex-start; padding:6px 0 8px; }
+  .h1 { font-size:20px; font-weight:800; letter-spacing:1.5px; }
+  .h2 { font-family:ui-monospace,monospace; font-size:9px; color:var(--muted); letter-spacing:1px; margin-top:2px; }
+  .pill { font-size:10px; color:var(--cyan); border:1px solid rgba(0,240,255,.45); background:rgba(0,240,255,.08); border-radius:999px; padding:5px 10px; white-space:nowrap; }
+
+  /* Deck */
+  .deck { display:flex; flex-direction:column; align-items:center; gap:9px; padding-top:4px; }
+  .vinyl-wrap { position:relative; width:236px; height:236px; margin:2px 0 4px; }
+  .vinyl {
+    position:absolute; inset:1px; border-radius:50%;
+    background:repeating-radial-gradient(circle at 50% 50%, #13171F 0 2px, #1B2230 2px 3px, #13171F 3px 5px);
+    box-shadow:0 0 0 1px #0B1018, 0 18px 40px rgba(0,0,0,.55);
+  }
+  .vinyl::after { content:""; position:absolute; inset:0; border-radius:50%; background:conic-gradient(from 20deg, transparent 0 40%, rgba(255,255,255,.06) 48%, transparent 56% 100%); }
+  .label {
+    position:absolute; left:50%; top:50%; width:94px; height:94px; transform:translate(-50%,-50%);
+    border-radius:50%; background:radial-gradient(circle at 50% 35%, #00F0FF, #0284C7 70%);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; color:#03121A;
+    font-weight:800; z-index:2; border:2px solid rgba(0,240,255,.55);
+  }
+  .label small { font-size:9px; letter-spacing:1px; opacity:.75; }
+  .label b { font-size:13px; letter-spacing:1px; }
+  .spindle { position:absolute; left:50%; top:50%; width:14px; height:14px; transform:translate(-50%,-50%); border-radius:50%; background:#E2E8F0; border:1.5px solid #0F1420; z-index:3; }
+  .tonearm { position:absolute; right:14px; top:14px; width:150px; height:2px; background:#CBD5E1; transform:rotate(38deg); transform-origin:right center; border-radius:2px; z-index:4; }
+  .tonearm::before { content:""; position:absolute; right:-8px; top:-6px; width:16px; height:16px; border-radius:50%; background:#1E283C; border:2px solid #E2E8F0; }
+  .tonearm::after { content:""; position:absolute; left:-5px; top:-4px; width:10px; height:10px; border-radius:50%; background:#0F1420; border:2px solid var(--cyan); }
+  .track { font-size:20px; font-weight:800; text-align:center; margin-top:2px; }
+  .artist { color:var(--sky); font-size:15px; font-weight:500; }
+  .genre { margin-top:3px; font-size:11.5px; font-weight:800; letter-spacing:.8px; color:var(--cyan); border:1px solid var(--line); background:var(--elevated); border-radius:999px; padding:5px 14px; }
+  .meta { font-family:ui-monospace,monospace; font-size:9.5px; letter-spacing:.6px; color:var(--muted); }
+  .quote { color:var(--sky); font-size:11.5px; font-style:italic; text-align:center; line-height:16px; padding:0 8px; }
+  .sync-badge { font-size:9.5px; font-weight:800; color:var(--gold); border:1px solid rgba(255,215,0,.6); background:rgba(255,215,0,.13); border-radius:8px; padding:3px 8px; }
+  .wave {
+    width:100%; height:50px; border-radius:14px; background:var(--elevated); border:1.2px solid var(--cyan);
+    display:flex; align-items:center; justify-content:center; gap:8px; font-size:12.5px; font-weight:800; color:var(--cyan);
+  }
+  .wave .g { font-size:18px; }
+  .actions { display:flex; gap:8px; width:100%; }
+  .tile { flex:1; height:44px; border-radius:12px; background:var(--surface); border:1px solid var(--line2); display:flex; align-items:center; justify-content:center; gap:5px; font-size:10.5px; font-weight:800; }
+  .tile.gold { color:var(--gold); border-color:rgba(255,215,0,.5); }
+  .tile.amber { color:var(--amber); border-color:rgba(255,184,0,.5); }
+  .tile.sky { color:var(--sky); border-color:rgba(56,189,248,.5); }
+
+  /* Echoes */
+  .seg { display:flex; background:var(--surface); border-radius:14px; padding:3px; margin:8px 0 10px; gap:3px; }
+  .seg div { flex:1; text-align:center; font-size:10px; font-weight:700; color:var(--dim); padding:7px 0; border-radius:11px; }
+  .seg .on { background:rgba(0,240,255,.14); color:var(--cyan); }
+  .sig { display:flex; gap:10px; align-items:center; background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:10px; margin-bottom:8px; position:relative; overflow:hidden; }
+  .sig::before { content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--acc,var(--cyan)); }
+  .avatar { width:44px; height:44px; border-radius:50%; background:radial-gradient(circle at 50% 45%, rgba(0,240,255,.22), #0B1325 70%); position:relative; flex:none; border:1px solid rgba(0,240,255,.25); }
+  .petal { position:absolute; width:15px; height:15px; border-radius:50%; background:var(--acc,var(--cyan)); opacity:.55; }
+  .avatar .core { position:absolute; left:50%; top:50%; width:10px; height:10px; transform:translate(-50%,-50%); border-radius:50%; background:var(--acc,var(--cyan)); }
+  .sig-body { flex:1; min-width:0; }
+  .persona { font-size:10.5px; font-weight:800; color:var(--acc,var(--cyan)); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .s-track { font-size:13.5px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .s-artist { font-size:11.5px; color:var(--sky); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .s-meta { font-size:10px; color:var(--muted); margin-top:1px; }
+  .arrow { color:var(--cyan); font-size:15px; flex:none; }
+
+  /* Caches */
+  .radii { display:flex; gap:7px; margin:6px 0 9px; }
+  .radius { flex:1; text-align:center; font-size:10.5px; font-weight:800; padding:7px 0; border-radius:999px; color:var(--muted); background:var(--surface); border:1px solid var(--line); }
+  .radius.on { color:#03121A; background:var(--cyan); border-color:var(--cyan); }
+  .radar { height:120px; border-radius:16px; background:var(--surface); border:1px solid var(--line); position:relative; overflow:hidden; margin-bottom:9px; }
+  .radar .ring { position:absolute; left:50%; top:50%; border:1px solid rgba(38,49,62,.9); border-radius:50%; transform:translate(-50%,-50%); }
+  .radar .dot { position:absolute; width:7px; height:7px; border-radius:50%; background:var(--amber); box-shadow:0 0 10px var(--amber); }
+  .radar .venue { background:var(--sky); box-shadow:0 0 10px var(--sky); width:8px; height:8px; }
+  .radar .me { position:absolute; left:50%; top:50%; width:8px; height:8px; transform:translate(-50%,-50%); border-radius:50%; background:var(--cyan); }
+  .cap { border-radius:14px; padding:12px; margin-bottom:8px; }
+  .cap.venue { background:#0A192F; border:1.2px solid var(--sky); }
+  .cap.personal { background:var(--surface); border:1px solid var(--line); }
+  .cap .badge-line { font-family:ui-monospace,monospace; font-size:9px; letter-spacing:1px; color:var(--sky); }
+  .cap .name { font-size:13.5px; font-weight:800; margin-top:3px; }
+  .cap .quote2 { font-size:11.5px; font-style:italic; color:#CBD5E1; line-height:15px; margin-top:4px; }
+  .cap .trackline { font-size:11.5px; color:var(--sky); margin-top:3px; }
+  .cap .meta2 { font-size:10px; color:var(--muted); margin-top:3px; }
+  .cap .perk { font-size:10.5px; color:#FFE082; margin-top:4px; }
+  .state { font-size:9.5px; color:var(--green); border:1px solid rgba(52,211,153,.3); border-radius:6px; padding:2px 6px; display:inline-block; margin-top:5px; }
+
+  .nav { height:64px; border-top:1px solid var(--line); background:var(--surface); display:flex; align-items:center; justify-content:space-around; flex:none; }
+  .nav div { text-align:center; font-size:10.5px; color:#788695; }
+  .nav .on { color:var(--cyan); font-weight:800; }
+  .nav .ico { width:22px; height:22px; margin:0 auto 3px; border-radius:50%; border:1.5px solid currentColor; opacity:.9; }
+  .nav .deck-ico { border-radius:50%; box-shadow:inset 0 0 0 4px transparent; }
+  .footer { max-width:1500px; margin:26px auto 0; color:var(--dim); font-size:11px; font-family:ui-monospace,monospace; letter-spacing:.4px; }
+</style>
+</head>
+<body>
+  <div class="head">
+    <div>
+      <div class="title">ЭХО · PHASE 1</div>
+      <div class="sub">Визуализация до правок: упрощённая Дека без аккордеона и шести рамок, «Отзвуки» с генеративными аватарами и архетипом, «Тайники» с радиусом и разделением B2B / личных капсул. Нижняя навигация пока остаётся 4 вкладками, мини-плеер убирается.</div>
+    </div>
+    <div class="badge">390 × 820 · dark · cyan #00F0FF / sky #38BDF8</div>
+  </div>
+
+  <div class="stage">
+    <!-- DECK -->
+    <div class="phone-col">
+      <div class="phone-label">01 · ДЕКА — шторка/экран</div>
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span>◐ 24%</span></div>
+        <div class="screen">
+          <div class="topline">
+            <div><div class="h1">ДЕКА</div><div class="h2">ПРОИГРЫВАТЕЛЬ ЭФИРА</div></div>
+            <div class="pill">Мой трек ♫</div>
+          </div>
+          <div class="deck">
+            <div class="vinyl-wrap">
+              <div class="vinyl"></div>
+              <div class="tonearm"></div>
+              <div class="label"><small>33⅓</small><b>ЭХО</b></div>
+              <div class="spindle"></div>
+            </div>
+            <div class="track">Спокойная ночь</div>
+            <div class="artist">Кино</div>
+            <div class="genre">♫ POST-PUNK</div>
+            <div class="meta">118 BPM · 8B · ~52 м</div>
+            <div class="sync-badge">🪡 СЛУШАЕТЕ В УНИСОН</div>
+            <div class="quote">«Холодный пост-панк на перекрёстке спального района.»</div>
+            <div class="wave"><span class="g">∿</span> Послать волну созвучия</div>
+            <div class="actions">
+              <div class="tile gold">🪡 Вместе</div>
+              <div class="tile amber">★ В находки</div>
+              <div class="tile sky">▶ В плеере</div>
+            </div>
+          </div>
+        </div>
+        <div class="nav">
+          <div><div class="ico"></div>ЭФИР</div>
+          <div class="on"><div class="ico deck-ico"></div>ДЕКА</div>
+          <div><div class="ico"></div>ОТЗВУКИ</div>
+          <div><div class="ico"></div>ТАЙНИКИ</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ECHOES -->
+    <div class="phone-col">
+      <div class="phone-label">02 · ОТЗВУКИ — генеративные аватары</div>
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span>◐ 24%</span></div>
+        <div class="screen">
+          <div class="topline">
+            <div><div class="h1">ОТЗВУКИ</div><div class="h2">АРХИВ СОЗВУЧИЙ И ЭФИР ВОКРУГ</div></div>
+          </div>
+          <div class="seg">
+            <div class="on">Эфир (4)</div><div>Сохранено</div><div>Волны (3)</div><div>Истории</div>
+          </div>
+
+          <div class="sig" style="--acc:#34D399">
+            <div class="avatar">
+              <div class="petal" style="left:7px; top:7px"></div>
+              <div class="petal" style="right:7px; top:7px"></div>
+              <div class="petal" style="left:7px; bottom:7px"></div>
+              <div class="petal" style="right:7px; bottom:7px"></div>
+              <div class="core"></div>
+            </div>
+            <div class="sig-body">
+              <div class="persona">Ловец виниловых волн</div>
+              <div class="s-track">Pompeya — 90</div>
+              <div class="s-artist">Парк Горького · Набережная</div>
+              <div class="s-meta">81% резонанс · 118 BPM · 8B</div>
+            </div>
+            <div class="arrow">→</div>
+          </div>
+
+          <div class="sig" style="--acc:#A855F7">
+            <div class="avatar">
+              <div class="petal" style="left:14px; top:5px"></div>
+              <div class="petal" style="left:4px; top:19px"></div>
+              <div class="petal" style="right:4px; top:19px"></div>
+              <div class="petal" style="left:14px; bottom:5px"></div>
+              <div class="core"></div>
+            </div>
+            <div class="sig-body">
+              <div class="persona">Пилигрим неоновых панелек</div>
+              <div class="s-track">Молчат Дома — Судно</div>
+              <div class="s-artist">Сретенка · Камерные бары</div>
+              <div class="s-meta">88% резонанс · 140 BPM · 9A</div>
+            </div>
+            <div class="arrow">→</div>
+          </div>
+
+          <div class="sig" style="--acc:#38BDF8">
+            <div class="avatar">
+              <div class="petal" style="left:7px; top:7px"></div>
+              <div class="petal" style="right:7px; top:7px"></div>
+              <div class="petal" style="left:7px; bottom:7px"></div>
+              <div class="petal" style="right:7px; bottom:7px"></div>
+              <div class="petal" style="left:18px; top:14px"></div>
+              <div class="core"></div>
+            </div>
+            <div class="sig-body">
+              <div class="persona">Архивариус забытых кассет</div>
+              <div class="s-track">Sirotkin — Август</div>
+              <div class="s-artist">Вечерняя улица</div>
+              <div class="s-meta">94% резонанс · 118 BPM · 8B</div>
+            </div>
+            <div class="arrow">→</div>
+          </div>
+
+          <div class="sig" style="--acc:#FFB800; opacity:.7">
+            <div class="avatar">
+              <div class="petal" style="left:7px; top:7px"></div>
+              <div class="petal" style="right:7px; top:7px"></div>
+              <div class="petal" style="left:7px; bottom:7px"></div>
+              <div class="petal" style="right:7px; bottom:7px"></div>
+              <div class="core"></div>
+            </div>
+            <div class="sig-body">
+              <div class="persona">Странник сонных набережных · призрак</div>
+              <div class="s-track">Timecop1983 — On the Run</div>
+              <div class="s-artist">Парк Горького · Набережная</div>
+              <div class="s-meta">призрачный след · 17 мин назад</div>
+            </div>
+            <div class="arrow">→</div>
+          </div>
+        </div>
+        <div class="nav">
+          <div><div class="ico"></div>ЭФИР</div>
+          <div><div class="ico deck-ico"></div>ДЕКА</div>
+          <div class="on"><div class="ico"></div>ОТЗВУКИ</div>
+          <div><div class="ico"></div>ТАЙНИКИ</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CACHES -->
+    <div class="phone-col">
+      <div class="phone-label">03 · ТАЙНИКИ — радиус и B2B / личные</div>
+      <div class="phone">
+        <div class="statusbar"><span>9:41</span><span>◐ 24%</span></div>
+        <div class="screen">
+          <div class="topline">
+            <div><div class="h1">ТАЙНИКИ</div><div class="h2">МУЗЫКАЛЬНЫЕ КАПСУЛЫ И МЕСТА ГОРОДА</div></div>
+          </div>
+          <div style="height:36px;border-radius:12px;border:1.2px solid var(--amber);background:rgba(255,184,0,.12);display:flex;align-items:center;justify-content:center;gap:6px;font-size:11px;font-weight:800;color:var(--amber)">⏳ + ОСТАВИТЬ МУЗЫКАЛЬНУЮ КАПСУЛУ</div>
+
+          <div class="radii">
+            <div class="radius">250 м</div>
+            <div class="radius on">500 м</div>
+            <div class="radius">1000 м</div>
+          </div>
+
+          <div class="radar">
+            <div class="ring" style="width:104px;height:104px"></div>
+            <div class="ring" style="width:62px;height:62px"></div>
+            <div class="ring" style="width:28px;height:28px"></div>
+            <div class="dot" style="left:58%;top:28%"></div>
+            <div class="dot venue" style="left:36%;top:56%"></div>
+            <div class="dot" style="left:72%;top:64%"></div>
+            <div class="me"></div>
+            <div style="position:absolute;left:0;right:0;bottom:5px;text-align:center;font-family:ui-monospace,monospace;font-size:8.5px;color:var(--dim)">РАДИУС СЛЫШИМОСТИ · 500 м</div>
+          </div>
+
+          <div class="cap venue">
+            <div class="badge-line">◈ МЕСТА И ВИНИЛ · B2B</div>
+            <div class="name">Виниловая лавка «Фонограф»</div>
+            <div class="trackline">♫ Massive Attack — Teardrop</div>
+            <div class="quote2">«Звуковой тайник „Фонографа“: мы на одной волне!»</div>
+            <div class="perk">🎁 Кодовое слово «ЭХО-33»: фильтр-кофе и скидка 15% на винил дня</div>
+            <div class="meta2">Сретенка · Камерные бары · 70 м</div>
+          </div>
+
+          <div class="cap personal">
+            <div class="quote2" style="margin-top:0">«Остановись на перекрёстке и подними глаза к крышам домов…»</div>
+            <div class="trackline">♫ Sirotkin — Выше домов</div>
+            <div class="meta2">Архивариус забытых кассет · Вечерняя улица · 95 м</div>
+            <div class="state">открыт · резонанс совпал</div>
+          </div>
+
+          <div class="cap personal">
+            <div class="quote2" style="margin-top:0">«Слушай этот трек, когда огни фонарей начнут двоиться в мокром стекле…»</div>
+            <div class="trackline">♫ Кино — Спокойная ночь</div>
+            <div class="meta2">Проводник туманов · Вечерняя улица · 52 м</div>
+            <div class="state" style="color:var(--gold);border-color:rgba(255,215,0,.3)">нужен резонанс 80%</div>
+          </div>
+        </div>
+        <div class="nav">
+          <div><div class="ico"></div>ЭФИР</div>
+          <div><div class="ico deck-ico"></div>ДЕКА</div>
+          <div><div class="ico"></div>ОТЗВУКИ</div>
+          <div class="on"><div class="ico"></div>ТАЙНИКИ</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Phase 1: мини-плеер убран · аккордеон BPM удалён · 3 действия + синхрон · генеративные аватары · радиус 250/500/1000 · B2B отделён от личных · навигация и карта — Phase 2.
+  </div>
+</body>
+</html>
