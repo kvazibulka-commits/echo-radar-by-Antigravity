@@ -24,6 +24,19 @@ jobs:
         with:
           gradle-version: '8.7'
 
+      - name: 3b. Восстановление ключа подписи
+        run: |
+          set -e
+          if [ -n "${{ secrets.ECHO_KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.ECHO_KEYSTORE_BASE64 }}" | base64 -d > echo_release.jks
+            echo "Ключ из секрета восстановлен: $(stat -c%s echo_release.jks) байт"
+          elif [ -f echo_release.jks ]; then
+            echo "Ключ уже в репозитории: $(stat -c%s echo_release.jks) байт"
+          else
+            echo "::error::Нет echo_release.jks и нет секрета ECHO_KEYSTORE_BASE64"
+            exit 1
+          fi
+
       - name: 4. Сборка отладочного APK (Debug)
         run: |
           gradle assembleDebug --no-daemon
@@ -35,12 +48,12 @@ jobs:
           APK=app/build/outputs/apk/debug/app-debug.apk
           echo "== файл =="
           ls -l "$APK" || true
-          echo "== постоянный debug-ключ =="
-          unzip -l "$APK" | grep -iE 'META-INF/(CERT|DEBUG|ECHO)' || true
-          echo "== любой .RSA =="
+          echo "== подпись v1 (JAR) =="
           unzip -l "$APK" | grep -iE '\.RSA|\.SF|\.MF' || true
+          echo "== подпись v2/v3 =="
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK" || true
           if ! unzip -l "$APK" | grep -qi 'META-INF/.*\.RSA'; then
-            echo "::error::APK без подписи — Android откажется его устанавливать"
+            echo "::error::APK без подписи v1 — Android откажется его устанавливать"
             exit 1
           fi
           echo "APK подписан"

@@ -8,6 +8,17 @@ android {
     namespace = "ru.echo.radar"
     compileSdk = 34
 
+    // Постоянный ключ подписи. Без него Android ставит APK как «повреждённый файл».
+    // На CI ключ восстанавливается из секретов в echo_release.jks.
+    signingConfigs {
+        create("echo") {
+            storeFile = file("../echo_release.jks")
+            storePassword = System.getenv("ECHO_KEYSTORE_PASSWORD") ?: "echoRelease2026"
+            keyAlias = System.getenv("ECHO_KEY_ALIAS") ?: "echo"
+            keyPassword = System.getenv("ECHO_KEY_PASSWORD") ?: "echoRelease2026"
+        }
+    }
+
     defaultConfig {
         applicationId = "ru.echo.radar"
         minSdk = 26
@@ -22,13 +33,11 @@ android {
 
     buildTypes {
         debug {
-            // Без подписи Android ставит такой APK как «повреждённый файл».
-            // Если CI передал ключ — используем его, иначе стандартный debug-ключ.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("echo")
         }
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("echo")
         }
     }
     compileOptions {
