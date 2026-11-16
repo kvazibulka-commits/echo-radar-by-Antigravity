@@ -53,6 +53,16 @@ android {
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.11"
     }
+    // v1 (JAR) нужен старым прошивкам и файловым менеджерам, которые проверяют
+    // только JAR-подпись; без него Android пишет «файл повреждён».
+    signingConfigs {
+        getByName("echo") {
+            enableV1Signing = true
+            enableV2Signing = true
+            enableV3Signing = true
+        }
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
