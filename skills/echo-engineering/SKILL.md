@@ -224,6 +224,18 @@ B_AB = 0.15·K + 0.10·T + 0.25·W + 0.15·M + 0.35·E
   Дека — `ModalBottomSheet(skipPartiallyExpanded=true)`, контент вынесен в
   локальную `deckContent`; `BackHandler` закрывает шторку; виджет открывает её.
 
+### Подпись APK (обязательно)
+
+- APK **всегда** подписывается ключом `echo_release.jks` (alias `echo`), он лежит
+  в корне репозитория. Без подписи Android пишет «файл повреждён».
+- `signingConfigs { create("echo") { storeFile = file("../echo_release.jks") } }`,
+  применён к `debug` и `release`; v1/v2/v3 включены.
+- После сборки локально проверяй:
+  `apksigner verify --min-sdk-version 26 --verbose app-debug.apk`.
+- CI падает, если подпись отсутствует — не отключай шаг `4b. Проверка подписи`.
+- `apksigner` есть в `%LOCALAPPDATA%\Android\Sdk\build-tools\34.0.0\`,
+  Java — в `%USERPROFILE%\.dsh\jdk\jdk-17.0.21+9`.
+
 ## Запуск и проверка
 
 ```bat

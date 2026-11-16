@@ -18,6 +18,37 @@
 
 ---
 
+## 2026-11-16 — фикс «файл повреждён»: подпись APK
+
+**Симптом:** телефон отказывался ставить APK — «файл повреждён».
+
+**Причина:** CI собирал APK вообще без подписи (`META-INF/*.RSA` отсутствовал,
+только v2/v3-блок в отдельных сборках). Android требует подписи.
+
+**Сделано**
+
+- `echo_release.jks` — постоянный ключ (alias `echo`, RSA 2048, 30 лет),
+  закоммичен в репозиторий; пароль — в `build.gradle.kts` (проект не в Play Store).
+- `app/build.gradle.kts`: `signingConfigs.create("echo")`, применён к debug и release,
+  включены v1/v2/v3.
+- Workflow: шаг проверки `apksigner verify --print-certs` по коду возврата;
+  сборка падает, если подпись отсутствует.
+- `deploy_build.py`: `echo_release.jks` добавлен в `FILES_TO_COMMIT`.
+
+**Проверено**
+
+- CI run `43819684539` — success, в логе: `Signer #1 certificate DN: CN=Echo Radar…`.
+- Локально: `apksigner verify` → `Verifies`, v2 + v3, отпечаток
+  `5b95bee3efda217fc295a21e8689a9a577a677dd736d7450f86a22643fb89d3f`.
+- APK 9 802 062 байт, sha256
+  `dfbe6c0969ef7b13239e4d38b3a1926afdd6e9c396bc69ad589d4bede16107d4`.
+- Ассет `v3.7.0` перезалит подписанным APK; копия лежит в
+  `D:\Проекты\Echo\deepseek harness\echo-radar-3.7.0-debug.apk`.
+
+**Урок:** никогда не публиковать APK без `apksigner verify`; проверка в CI обязательна.
+
+---
+
 ## 2026-11-15 — 3.7.0: карта и Дека-шторка
 
 **Сделано**
