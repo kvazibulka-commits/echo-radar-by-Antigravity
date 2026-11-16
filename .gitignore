@@ -6,11 +6,11 @@ echo_memory.db-wal
 echo_memory.db-shm
 cloudflared.exe
 
-# ─── Ключ подписи APK: НЕ коммитить ───
-# CI берёт его из секрета ECHO_KEYSTORE_BASE64 (base64 echo_release.jks).
-echo_release.jks
-*.jks
-*.keystore
+# ─── Ключ подписи APK ───
+# echo_release.jks лежит в репозитории намеренно: сборка в GitHub Actions должна
+# подписывать APK, иначе Android считает файл повреждённым. Пароль — в build.gradle.kts.
+# Замените ключ, если планируете публикацию в Google Play.
+# deploy_token.txt / echo_config.json по-прежнему не коммитятся.
 
 # ─── Python ───
 __pycache__/

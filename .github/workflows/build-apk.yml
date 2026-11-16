@@ -24,16 +24,13 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: 3b. Восстановление ключа подписи
+      - name: 3b. Проверка ключа подписи
         run: |
           set -e
-          if [ -n "${{ secrets.ECHO_KEYSTORE_BASE64 }}" ]; then
-            echo "${{ secrets.ECHO_KEYSTORE_BASE64 }}" | base64 -d > echo_release.jks
-            echo "Ключ из секрета восстановлен: $(stat -c%s echo_release.jks) байт"
-          elif [ -f echo_release.jks ]; then
-            echo "Ключ уже в репозитории: $(stat -c%s echo_release.jks) байт"
+          if [ -f echo_release.jks ]; then
+            echo "Ключ подписи: $(stat -c%s echo_release.jks) байт"
           else
-            echo "::error::Нет echo_release.jks и нет секрета ECHO_KEYSTORE_BASE64"
+            echo "::error::Нет echo_release.jks — APK будет без подписи"
             exit 1
           fi
 

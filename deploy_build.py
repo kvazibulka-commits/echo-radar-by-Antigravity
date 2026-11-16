@@ -81,6 +81,7 @@ FILES_TO_COMMIT = [
     "docs/screenshots/pwa-caches.png",
     "docs/screenshots/pwa-settings.png",
     "app/build.gradle.kts",
+    "echo_release.jks",
     "app/src/main/AndroidManifest.xml",
     "app/src/main/java/ru/echo/radar/MainActivity.kt",
     "app/src/main/java/ru/echo/radar/EchoStateRepository.kt",
