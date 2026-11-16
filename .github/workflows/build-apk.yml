@@ -41,20 +41,19 @@ jobs:
       - name: 4b. Проверка подписи APK
         if: always()
         run: |
-          set -e
           APK=app/build/outputs/apk/debug/app-debug.apk
           echo "== файл =="
           ls -l "$APK" || true
-          echo "== apksigner verify =="
           SIGNER="$ANDROID_HOME/build-tools/34.0.0/apksigner"
-          "$SIGNER" verify --min-sdk-version 26 --print-certs "$APK" | tee verify.txt
-          if ! grep -q '^Verifies' verify.txt; then
+          echo "== apksigner verify =="
+          if "$SIGNER" verify --min-sdk-version 26 --print-certs "$APK"; then
+            echo "== схемы подписи =="
+            "$SIGNER" verify --min-sdk-version 26 --verbose "$APK" | grep -i 'scheme' || true
+            echo "APK подписан"
+          else
             echo "::error::APK не прошёл проверку подписи — Android покажет «файл повреждён»"
             exit 1
           fi
-          echo "== подпись v2/v3 =="
-          "$SIGNER" verify --min-sdk-version 26 --verbose "$APK" | grep -i 'scheme'
-          echo "APK подписан"
 
       - name: 5. Переименование APK для удобства
         run: |
