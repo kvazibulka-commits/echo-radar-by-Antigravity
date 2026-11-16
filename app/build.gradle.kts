@@ -21,8 +21,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Без подписи Android ставит такой APK как «повреждённый файл».
+            // Если CI передал ключ — используем его, иначе стандартный debug-ключ.
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
     compileOptions {

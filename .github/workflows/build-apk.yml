@@ -29,11 +29,16 @@ jobs:
           gradle assembleDebug --no-daemon
 
       - name: 4b. Проверка подписи APK
+        if: always()
         run: |
           set -e
           APK=app/build/outputs/apk/debug/app-debug.apk
-          echo "== META-INF =="
-          unzip -l "$APK" | grep -i 'META-INF' || true
+          echo "== файл =="
+          ls -l "$APK" || true
+          echo "== постоянный debug-ключ =="
+          unzip -l "$APK" | grep -iE 'META-INF/(CERT|DEBUG|ECHO)' || true
+          echo "== любой .RSA =="
+          unzip -l "$APK" | grep -iE '\.RSA|\.SF|\.MF' || true
           if ! unzip -l "$APK" | grep -qi 'META-INF/.*\.RSA'; then
             echo "::error::APK без подписи — Android откажется его устанавливать"
             exit 1
